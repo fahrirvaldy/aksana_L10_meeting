@@ -160,6 +160,29 @@ function App() {
     const saved = localStorage.getItem('L10_Meeting_Data');
     return saved ? JSON.parse(saved) : INITIAL_STATE;
   });
+
+  const [attendances, setAttendances] = useState(() => {
+    const saved = localStorage.getItem('L10_Meeting_Data');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed.attendances) return parsed.attendances;
+      // Migrasi data lama jika ada
+      if (parsed.attendance) {
+        return parsed.attendance.map((a, i) => ({ 
+          id: i + 1, 
+          name: a.role || a.name, 
+          checked: a.checked 
+        }));
+      }
+    }
+    return [
+      { id: 1, name: 'Owner', checked: false }, 
+      { id: 2, name: 'Integrator', checked: false }, 
+      { id: 3, name: 'Marketing', checked: false }, 
+      { id: 4, name: 'Creative', checked: false }
+    ];
+  });
+
   const [timeLeft, setTimeLeft] = useState(90 * 60);
   const [isPaused, setIsPaused] = useState(true);
   const [cloudMsg, setCloudMsg] = useState('Standlone Mode (Offline)');
@@ -169,14 +192,41 @@ function App() {
   const slidesRef = useRef([]);
 
   // --- PERSISTENCE ---
+  const saveAllData = useCallback(() => {
+    const dataToSave = { ...data, attendances };
+    localStorage.setItem('L10_Meeting_Data', JSON.stringify(dataToSave));
+    setCloudMsg('Tersimpan di Cloud');
+    setCloudStatus('saved');
+  }, [data, attendances]);
+
+  const debouncedSave = useCallback(() => {
+    setCloudMsg('Menyimpan...');
+    setCloudStatus('saving');
+  }, []);
+
   useEffect(() => {
     const timer = setTimeout(() => {
-      localStorage.setItem('L10_Meeting_Data', JSON.stringify(data));
-      setCloudMsg('Tersimpan di Lokal');
-      setCloudStatus('saved');
+      saveAllData();
     }, 1000);
     return () => clearTimeout(timer);
-  }, [data]);
+  }, [data, attendances, saveAllData]);
+
+  // --- ATTENDANCE HANDLERS ---
+  const handleAddAttendance = () => {
+    const newId = attendances.length > 0 ? Math.max(...attendances.map(a => a.id)) + 1 : 1;
+    setAttendances([...attendances, { id: newId, name: '', checked: false }]);
+    debouncedSave();
+  };
+
+  const handleDeleteAttendance = (id) => {
+    setAttendances(attendances.filter(a => a.id !== id));
+    debouncedSave();
+  };
+
+  const handleUpdateAttendance = (id, field, value) => {
+    setAttendances(attendances.map(a => a.id === id ? { ...a, [field]: value } : a));
+    debouncedSave();
+  };
 
   // --- TIMER LOGIC ---
   useEffect(() => {
@@ -259,29 +309,58 @@ function App() {
 
   const saveAsPDF = async () => {
     setIsGeneratingPdf(true);
+    document.body.classList.add('generating-pdf');
+    
+    // Give DOM time to render the virtual screen
+    await new Promise(r => setTimeout(r, 500));
+    
     const pdf = new jsPDF({ orientation: 'l', unit: 'mm', format: 'a4', compress: true });
-    const pdfWidth = 297;
-    const pdfHeight = 210;
+    const slides = document.querySelectorAll('.slide');
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = pdf.internal.pageSize.getHeight();
 
-    for (let i = 0; i < 13; i++) {
-      setCurrentSlide(i);
-      // Wait for re-render
-      await new Promise(r => setTimeout(r, 500));
-      
-      const slideElement = document.querySelector(`.slide.active`);
-      if (slideElement) {
-        const canvas = await html2canvas(slideElement, {
-          scale: 2,
+    for (let i = 0; i < slides.length; i++) {
+      const slide = slides[i];
+      const originalDisplay = slide.style.display;
+      slide.style.display = 'flex'; // Ensure slide is layouted for capture
+
+      try {
+        const canvas = await html2canvas(slide, {
+          scale: 3, // 3x Quality
           useCORS: true,
+          logging: false,
           backgroundColor: '#f8fafc',
+          windowWidth: 1920,
+          windowHeight: 1080
         });
-        const imgData = canvas.toDataURL('image/png');
+        
+        const imgData = canvas.toDataURL('image/jpeg', 1.0);
+        const imgProps = pdf.getImageProperties(imgData);
+        const ratio = imgProps.width / imgProps.height;
+
+        let finalWidth = pdfWidth;
+        let finalHeight = pdfWidth / ratio;
+
+        if (finalHeight > pdfHeight) {
+          finalHeight = pdfHeight;
+          finalWidth = pdfHeight * ratio;
+        }
+
+        // Center position
+        const x = (pdfWidth - finalWidth) / 2;
+        const y = (pdfHeight - finalHeight) / 2;
+
         if (i > 0) pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
+        pdf.addImage(imgData, 'JPEG', x, y, finalWidth, finalHeight, undefined, 'FAST');
+      } catch (err) {
+        console.error("Slide capture failed", err);
+      } finally {
+        slide.style.display = originalDisplay;
       }
     }
     
-    pdf.save('L10_Meeting_Report.pdf');
+    pdf.save('L10_Meeting_Report_HQ.pdf');
+    document.body.classList.remove('generating-pdf');
     setIsGeneratingPdf(false);
   };
 
@@ -304,10 +383,7 @@ function App() {
   }, []);
 
   return (
-    <div className={isGeneratingPdf ? 'generating-pdf' : ''} onClick={(e) => {
-      if (e.target.closest('button') || e.target.closest('input') || e.target.closest('[contenteditable="true"]') || e.target.closest('.floating-timer') || e.target.closest('.nav-controls')) return;
-      nextSlide();
-    }}>
+    <div className={isGeneratingPdf ? 'generating-pdf' : ''}>
       
       {/* FLOATING TIMER */}
       <div className="floating-timer">
@@ -350,7 +426,6 @@ function App() {
               onChange={(val) => updateData('meetingDate', val)}
             />
           </div>
-          <p style={{ marginTop: '50px', color: '#94a3b8', fontSize: '16px' }}>Klik layar atau gunakan tombol navigasi untuk lanjut</p>
         </div>
       </div>
 
@@ -361,19 +436,38 @@ function App() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px', height: '100%' }}>
           <div className="card">
             <h3>Daftar Hadir</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginTop: '20px' }}>
-              {data.attendance.map((att, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div id="attendance-grid" className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+              {attendances.map((item) => (
+                <div key={item.id} className="flex items-center gap-3 group bg-slate-50 p-2 rounded-lg border border-transparent hover:border-slate-200 transition-all">
                   <input 
                     type="checkbox" 
-                    checked={att.checked} 
-                    onChange={(e) => updateListItem('attendance', i, 'checked', e.target.checked)}
-                    style={{ width: '22px', height: '22px' }}
+                    checked={item.checked}
+                    onChange={(e) => handleUpdateAttendance(item.id, 'checked', e.target.checked)}
+                    className="w-5 h-5 accent-aksana-primary cursor-pointer flex-shrink-0"
                   />
-                  <span style={{ fontSize: '18px' }}>{att.role}</span>
+                  <input 
+                    type="text" 
+                    value={item.name}
+                    onChange={(e) => handleUpdateAttendance(item.id, 'name', e.target.value)}
+                    placeholder="Nama Divisi..."
+                    className="flex-grow bg-transparent border-none outline-none font-medium text-slate-700 focus:ring-0 p-0"
+                  />
+                  <button 
+                    onClick={() => handleDeleteAttendance(item.id)}
+                    className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity p-1"
+                    title="Hapus Divisi"
+                  >
+                    <i className="fa-solid fa-xmark"></i>
+                  </button>
                 </div>
               ))}
             </div>
+            <button 
+              onClick={handleAddAttendance} 
+              className="mt-4 text-sm font-semibold text-aksana-accent hover:text-aksana-primary transition-colors flex items-center gap-1"
+            >
+              <i className="fa-solid fa-plus"></i> Tambah Divisi / Peserta
+            </button>
           </div>
           <div className="card">
             <h3>Good News (Kabar Syukur)</h3>

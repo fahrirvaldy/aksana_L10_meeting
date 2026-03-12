@@ -5,7 +5,14 @@ export default {
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        aksana: {
+          primary: '#1e293b',
+          accent: '#2563eb',
+        },
+      },
+    },
   },
   plugins: [],
 }

@@ -167,7 +167,6 @@ input {
   flex-direction: column;
   background: var(--bg-color);
   animation: fadeIn 0.3s ease;
-  cursor: pointer;
 }
 
 .slide.active {
@@ -560,7 +559,107 @@ ol.todo-list {
   display: none !important;
 }
 
+.generating-pdf {
+    width: 1920px !important;
+    height: 1080px !important;
+    overflow: hidden !important;
+}
+
+.generating-pdf .slide {
+    width: 1920px !important;
+    height: 1080px !important;
+    padding: 60px 80px !important;
+    display: flex !important; /* Ensure all slides are captured */
+    position: absolute;
+    left: -9999px; /* Hide from view but keep in DOM */
+}
+
+.generating-pdf .slide.active {
+    position: static;
+    left: 0;
+}
+
+.generating-pdf .card {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+}
+
+.generating-pdf *::-webkit-scrollbar {
+    display: none !important;
+}
+
 .generating-pdf .input-box {
   border: 1px solid #ccc;
   background: #fff;
+}
+
+/* =========================================
+   MOBILE RESPONSIVE (MAX 768PX)
+   ========================================= */
+@media (max-width: 768px) {
+    /* 1. Reset Padding dan Font Dasar */
+    .slide {
+        padding: 70px 15px 100px 15px !important;
+    }
+    h1 { font-size: 28px !important; }
+    h2 { font-size: 20px !important; }
+    .subtitle { font-size: 16px !important; margin-bottom: 15px !important; }
+    .card { padding: 15px !important; }
+
+    /* 2. Ubah Semua Layout Bersebelahan Menjadi Bertumpuk (Vertical) */
+    .grid-2, .ids-container {
+        grid-template-columns: 1fr !important;
+        gap: 15px !important;
+    }
+    /* Menimpa inline-style grid 1fr 1fr yang ada di JSX */
+    div[style*="grid-template-columns: 1fr 1fr"] {
+        grid-template-columns: 1fr !important;
+        height: auto !important;
+    }
+    
+    /* 3. Penyesuaian Tabel agar bisa digeser (Scroll Horizontal) */
+    table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+    th, td { font-size: 14px !important; padding: 10px !important; }
+    .input-box { font-size: 14px !important; padding: 10px !important; min-height: 40px !important; }
+
+    /* 4. Penyesuaian Tombol Floating (Lebih Kecil & Posisinya Digeser) */
+    .floating-timer {
+        top: 15px !important;
+        right: 15px !important;
+        padding: 6px 12px !important;
+        font-size: 16px !important;
+    }
+    .action-btn {
+        bottom: 20px !important;
+        left: 15px !important;
+        padding: 10px 15px !important;
+        font-size: 12px !important;
+    }
+    .nav-controls {
+        bottom: 20px !important;
+        right: 15px !important;
+        gap: 10px !important;
+    }
+    .nav-btn {
+        width: 45px !important;
+        height: 45px !important;
+        font-size: 18px !important;
+    }
+    .cloud-status {
+        bottom: 70px !important;
+        left: 15px !important;
+        max-width: 200px !important;
+        font-size: 11px !important;
+    }
+
+    /* 5. Penyesuaian Grid Rating di Halaman Akhir */
+    .rating-grid {
+        grid-template-columns: 1fr 1fr !important;
+    }
+    .rating-avg { font-size: 48px !important; margin-top: 20px !important; }
 }
