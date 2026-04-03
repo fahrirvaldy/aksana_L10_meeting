@@ -18,7 +18,6 @@ const DEFAULT_ATTENDANCE = [
 
 const INITIAL_STATE = {
   meetingDate: 'Senin, ...',
-  attendance: DEFAULT_ATTENDANCE,
   goodNews: { owner: '...', integrator: '...', team: '...' },
   marketingKPI: [
     { kpi: 'Omzet Total', target: 'Rp 273,751,236', real: '...', jenis: 'outcome', status: 'on' },
@@ -107,28 +106,41 @@ const INITIAL_STATE = {
 
 // --- COMPONENTS ---
 
+// PERBAIKAN BUG #3: Ganti div contentEditable dengan textarea auto-resize
 const Editable = ({ value, onChange, placeholder, className, style, id }) => {
-  const contentRef = useRef();
-
-  // Sync internal state with external value only when not focused
-  useEffect(() => {
-    if (contentRef.current && document.activeElement !== contentRef.current) {
-      contentRef.current.innerText = value;
-    }
-  }, [value]);
-
   return (
-    <div
-      ref={contentRef}
+    <textarea
       id={id}
-      contentEditable
       className={className}
-      style={style}
-      onBlur={(e) => onChange(e.target.innerText)}
-      onInput={(e) => {
-        // Debounced or immediate input can be handled here if needed
+      style={{
+        width: '100%',
+        background: 'transparent',
+        border: 'none',
+        outline: 'none',
+        resize: 'none',
+        fontFamily: 'inherit',
+        fontSize: 'inherit',
+        color: 'inherit',
+        fontWeight: 'inherit',
+        overflow: 'hidden',
+        padding: 0,
+        margin: 0,
+        display: 'block',
+        lineHeight: '1.5',
+        ...style
       }}
-      dangerouslySetInnerHTML={{ __html: value }}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      rows={1}
+      onInput={(e) => {
+        e.target.style.height = 'auto';
+        e.target.style.height = e.target.scrollHeight + 'px';
+      }}
+      onFocus={(e) => {
+        e.target.style.height = 'auto';
+        e.target.style.height = e.target.scrollHeight + 'px';
+      }}
     />
   );
 };
@@ -166,12 +178,9 @@ function App() {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (parsed.attendances) return parsed.attendances;
-      // Migrasi data lama jika ada
       if (parsed.attendance) {
         return parsed.attendance.map((a, i) => ({ 
-          id: i + 1, 
-          name: a.role || a.name, 
-          checked: a.checked 
+          id: i + 1, name: a.role || a.name, checked: a.checked 
         }));
       }
     }
@@ -185,29 +194,65 @@ function App() {
 
   const [timeLeft, setTimeLeft] = useState(90 * 60);
   const [isPaused, setIsPaused] = useState(true);
-  const [cloudMsg, setCloudMsg] = useState('Standlone Mode (Offline)');
-  const [cloudStatus, setCloudStatus] = useState('saved');
+  const [cloudMsg, setCloudMsg] = useState('Menghubungkan...');
+  const [cloudStatus, setCloudStatus] = useState('saving');
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
-  
-  const slidesRef = useRef([]);
 
-  // --- PERSISTENCE ---
-  const saveAllData = useCallback(() => {
+  // PERBAIKAN BUG #4: Mengambil data dari Backend saat Mount
+  useEffect(() => {
+    const fetchCloudData = async () => {
+      try {
+        const res = await fetch('http://localhost:5000/api/l10');
+        const json = await res.json();
+        if (json.success && json.data) {
+          if (json.data.attendances) setAttendances(json.data.attendances);
+          setData(prev => ({ ...prev, ...json.data, attendances: undefined }));
+          setCloudMsg('Terhubung ke Cloud');
+          setCloudStatus('saved');
+        }
+      } catch (err) {
+        setCloudMsg('Offline Mode (Local Storage)');
+        setCloudStatus('error');
+      }
+    };
+    fetchCloudData();
+  }, []);
+
+  // PERBAIKAN BUG #4: Mengirim data ke Backend via PUT
+  const saveAllData = useCallback(async () => {
     const dataToSave = { ...data, attendances };
     localStorage.setItem('L10_Meeting_Data', JSON.stringify(dataToSave));
-    setCloudMsg('Tersimpan di Cloud');
-    setCloudStatus('saved');
+    
+    setCloudMsg('Menyimpan ke Cloud...');
+    setCloudStatus('saving');
+    try {
+      const res = await fetch('http://localhost:5000/api/l10', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dataToSave)
+      });
+      if (res.ok) {
+        setCloudMsg('Tersimpan di Cloud');
+        setCloudStatus('saved');
+      } else {
+        setCloudMsg('Gagal Menyimpan (Cloud)');
+        setCloudStatus('error');
+      }
+    } catch (err) {
+      setCloudMsg('Tersimpan Lokal (Offline)');
+      setCloudStatus('saved');
+    }
   }, [data, attendances]);
 
   const debouncedSave = useCallback(() => {
-    setCloudMsg('Menyimpan...');
+    setCloudMsg('Mengetik...');
     setCloudStatus('saving');
   }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       saveAllData();
-    }, 1000);
+    }, 1500); // Tunggu 1.5 detik setelah berhenti mengetik
     return () => clearTimeout(timer);
   }, [data, attendances, saveAllData]);
 
@@ -248,9 +293,10 @@ function App() {
   };
 
   // --- ACTIONS ---
+  // PERBAIKAN BUG #3: Deep clone menggunakan JSON.parse(JSON.stringify) agar mutasi nested state aman
   const updateData = (path, value) => {
     setData((prev) => {
-      const newData = { ...prev };
+      const newData = JSON.parse(JSON.stringify(prev));
       const keys = path.split('.');
       let current = newData;
       for (let i = 0; i < keys.length - 1; i++) {
@@ -259,8 +305,7 @@ function App() {
       current[keys[keys.length - 1]] = value;
       return newData;
     });
-    setCloudMsg('Menyimpan...');
-    setCloudStatus('saving');
+    debouncedSave();
   };
 
   const updateListItem = (listKey, index, field, value) => {
@@ -269,7 +314,7 @@ function App() {
       newList[index] = { ...newList[index], [field]: value };
       return { ...prev, [listKey]: newList };
     });
-    setCloudStatus('saving');
+    debouncedSave();
   };
 
   const addRow = (listKey, template) => {
@@ -277,6 +322,19 @@ function App() {
       ...prev,
       [listKey]: [...prev[listKey], template]
     }));
+    debouncedSave();
+  };
+
+  // PERBAIKAN BUG #2: Fungsi khusus untuk menambah issue IDS agar tidak error mencari prev['ids.issues']
+  const addIssue = () => {
+    setData(prev => ({
+      ...prev,
+      ids: {
+        ...prev.ids,
+        issues: [...prev.ids.issues, { text: 'Masalah baru...', checked: false }]
+      }
+    }));
+    debouncedSave();
   };
 
   const nextSlide = () => {
@@ -287,31 +345,41 @@ function App() {
     if (currentSlide > 0) setCurrentSlide(currentSlide - 1);
   };
 
+  // PERBAIKAN BUG #1: Logika tarik Off-Track disempurnakan agar tidak tumpang tindih
   const populateIDS = () => {
     const offTrackKPIs = [];
     ['marketingKPI', 'creativeKPI', 'rndKPI', 'ppicKPI', 'financeKPI', 'gudangKPI', 'rockReview'].forEach(key => {
-      data[key].forEach(item => {
-        if (item.status === 'off') {
-          offTrackKPIs.push(item.kpi || item.rock);
-        }
-      });
+      if (data[key]) {
+        data[key].forEach(item => {
+          if (item.status === 'off') {
+            offTrackKPIs.push(item.kpi || item.rock);
+          }
+        });
+      }
     });
 
-    const newIssues = offTrackKPIs.map(text => ({ text, checked: false }));
-    setData(prev => ({
-      ...prev,
-      ids: {
-        ...prev.ids,
-        issues: [...prev.ids.issues, ...newIssues]
-      }
-    }));
+    setData(prev => {
+      const existingTexts = prev.ids.issues.map(i => i.text);
+      // Filter agar tidak memasukkan masalah yang sudah ada di list
+      const newIssues = offTrackKPIs
+        .filter(text => !existingTexts.includes(text))
+        .map(text => ({ text, checked: false }));
+        
+      return {
+        ...prev,
+        ids: {
+          ...prev.ids,
+          issues: [...prev.ids.issues, ...newIssues]
+        }
+      };
+    });
+    debouncedSave();
   };
 
   const saveAsPDF = async () => {
     setIsGeneratingPdf(true);
     document.body.classList.add('generating-pdf');
     
-    // Give DOM time to render the virtual screen
     await new Promise(r => setTimeout(r, 500));
     
     const pdf = new jsPDF({ orientation: 'l', unit: 'mm', format: 'a4', compress: true });
@@ -322,11 +390,11 @@ function App() {
     for (let i = 0; i < slides.length; i++) {
       const slide = slides[i];
       const originalDisplay = slide.style.display;
-      slide.style.display = 'flex'; // Ensure slide is layouted for capture
+      slide.style.display = 'flex'; 
 
       try {
         const canvas = await html2canvas(slide, {
-          scale: 3, // 3x Quality
+          scale: 3, 
           useCORS: true,
           logging: false,
           backgroundColor: '#f8fafc',
@@ -346,7 +414,6 @@ function App() {
           finalWidth = pdfHeight * ratio;
         }
 
-        // Center position
         const x = (pdfWidth - finalWidth) / 2;
         const y = (pdfHeight - finalHeight) / 2;
 
@@ -364,27 +431,49 @@ function App() {
     setIsGeneratingPdf(false);
   };
 
-  const getNextTuesday = () => {
+  const getCurrentDate = () => {
     const today = new Date();
-    const dayOfWeek = today.getDay();
-    let daysUntilTuesday = 2 - dayOfWeek;
-    if (daysUntilTuesday < 0) daysUntilTuesday += 7;
-    const nextTuesday = new Date(today);
-    nextTuesday.setDate(today.getDate() + daysUntilTuesday);
     const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
     const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-    return `${days[nextTuesday.getDay()]}, ${nextTuesday.getDate()} ${months[nextTuesday.getMonth()]} ${nextTuesday.getFullYear()}`;
+    return `${days[today.getDay()]}, ${today.getDate()} ${months[today.getMonth()]} ${today.getFullYear()}`;
   };
 
   useEffect(() => {
     if (data.meetingDate === 'Senin, ...') {
-      updateData('meetingDate', getNextTuesday());
+      updateData('meetingDate', getCurrentDate());
     }
   }, []);
 
   return (
     <div className={isGeneratingPdf ? 'generating-pdf' : ''}>
       
+      {/* --- SUNTIKAN CSS PERBAIKAN LAYOUT (FOOTER SAFE ZONE) --- */}
+      <style>{`
+        /* 1. Kembalikan tombol aksi ke bawah, dan pindahkan Status Cloud ke TENGAH BAWAH */
+        .action-btn, .nav-controls { z-index: 100 !important; }
+        .cloud-status { 
+          position: fixed !important; 
+          bottom: 30px !important; 
+          left: 50% !important; 
+          transform: translateX(-50%) !important; /* Trik CSS untuk persis di tengah */
+          margin: 0 !important;
+          z-index: 100 !important; 
+        }
+
+        /* 2. BATASI TINGGI KONTEN BAWAH (Safe Zone) */
+        .card, .ids-col { 
+          max-height: 65vh !important; 
+          margin-bottom: 80px !important; 
+        }
+        
+        .card > div, .card > table, .card > ol {
+          padding-bottom: 40px !important;
+        }
+
+        /* 3. Override khusus untuk kartu Headlines agar tingginya simetris 50:50 */
+        .headline-card { margin-bottom: 0 !important; max-height: none !important; flex: 1; }
+      `}</style>
+
       {/* FLOATING TIMER */}
       <div className="floating-timer">
         <i className="fa-regular fa-clock"></i>
@@ -406,7 +495,7 @@ function App() {
       </button>
 
       {/* CLOUD STATUS */}
-      <div className={`cloud-status ${cloudStatus}`}>
+      <div className={`cloud-status ${cloudStatus === 'error' ? 'error' : 'saved'}`}>
         <i className="fa-solid fa-cloud"></i> <span>{cloudMsg}</span>
       </div>
 
@@ -418,13 +507,26 @@ function App() {
           <h1 style={{ fontSize: '64px', color: 'var(--primary)', marginBottom: '10px' }}>LEVEL 10 MEETING</h1>
           <h2 style={{ fontSize: '36px', color: 'var(--accent)', marginBottom: '50px', fontWeight: 500 }}>Ammarkids Operational</h2>
           <div style={{ background: 'white', padding: '30px 60px', borderRadius: '20px', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }}>
-            <div style={{ fontSize: '16px', color: 'var(--text-light)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '1px' }}>Tanggal Rapat</div>
-            <Editable 
+            
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+              <div style={{ fontSize: '16px', color: 'var(--text-light)', textTransform: 'uppercase', letterSpacing: '1px' }}>Tanggal Rapat</div>
+              <button 
+                onClick={() => updateData('meetingDate', getCurrentDate())} 
+                style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '14px', padding: '5px', borderRadius: '50%' }} 
+                title="Set Otomatis ke Hari Ini"
+                className="hover:bg-slate-100 transition-colors"
+              >
+                <i className="fa-solid fa-arrows-rotate"></i>
+              </button>
+            </div>
+
+            {/* TANGGAL SEKARANG DIBUAT STATIS (TIDAK BISA DIKETIK MANUAL) */}
+            <div 
               className="editable-date"
-              style={{ fontSize: '32px', fontWeight: 800, color: 'var(--primary)' }}
-              value={data.meetingDate}
-              onChange={(val) => updateData('meetingDate', val)}
-            />
+              style={{ fontSize: '32px', fontWeight: 800, color: 'var(--primary)', textAlign: 'center', padding: '5px 0' }}
+            >
+              {data.meetingDate}
+            </div>
           </div>
         </div>
       </div>
@@ -434,7 +536,7 @@ function App() {
         <h1>Segmen Awal</h1>
         <div className="subtitle">Kehadiran & Kabar Baik (5 Menit)</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px', height: '100%' }}>
-          <div className="card">
+          <div className="card" style={{ overflowY: 'auto', maxHeight: '65vh' }}>
             <h3>Daftar Hadir</h3>
             <div id="attendance-grid" className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
               {attendances.map((item) => (
@@ -498,7 +600,7 @@ function App() {
         <div key={sheet.key} className={`slide ${currentSlide === (index + 2) ? 'active' : ''}`}>
           <h1>Scorecard: {sheet.title}</h1>
           <div className="subtitle">Review KPI & Output</div>
-          <div className="card">
+          <div className="card" style={{ overflowY: 'auto', maxHeight: '70vh' }}>
             <table>
               <thead>
                 <tr>
@@ -530,10 +632,10 @@ function App() {
       <div className={`slide ${currentSlide === 8 ? 'active' : ''}`}>
         <h1>Rock Review</h1>
         <div className="subtitle">Prioritas 90 Hari</div>
-        <div className="card">
+        <div className="card" style={{ overflowY: 'auto', maxHeight: '70vh' }}>
           <table>
             <thead>
-              <tr><th>Owner</th><th>Rock</th><th align="center">Status</th><th>Catatan</th></tr>
+              <tr><th style={{width: '15%'}}>Owner</th><th style={{width: '40%'}}>Rock</th><th align="center" style={{width: '15%'}}>Status</th><th style={{width: '30%'}}>Catatan</th></tr>
             </thead>
             <tbody>
               {data.rockReview.map((item, i) => (
@@ -553,10 +655,13 @@ function App() {
       <div className={`slide ${currentSlide === 9 ? 'active' : ''}`}>
         <h1>Headlines</h1>
         <div className="subtitle">Berita Penting (Customer & Internal)</div>
-        <div className="stacked-layout">
-          <div className="card" style={{ maxHeight: '48%' }}>
+        
+        {/* Wrapper Flexbox untuk membagi tinggi 50:50 */}
+        <div className="stacked-layout" style={{ display: 'flex', flexDirection: 'column', gap: '20px', height: '65vh', paddingBottom: '20px' }}>
+          
+          <div className="card headline-card" style={{ overflowY: 'auto' }}>
             <h3 style={{ color: 'var(--accent)' }}>Customer Headlines</h3>
-            <div style={{ overflowY: 'auto' }}>
+            <div>
               {data.headlines.customer.map((hl, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'start', gap: '15px', marginBottom: '10px' }}>
                   <span style={{ marginTop: '12px', fontWeight: 800, color: 'var(--text-light)', fontSize: '18px' }}>{i + 1}.</span>
@@ -568,10 +673,15 @@ function App() {
                 </div>
               ))}
             </div>
+            <button className="add-btn" onClick={() => {
+              const newHl = [...data.headlines.customer, '...'];
+              updateData('headlines.customer', newHl);
+            }}>+ Tambah Customer Headline</button>
           </div>
-          <div className="card" style={{ maxHeight: '48%' }}>
+          
+          <div className="card headline-card" style={{ overflowY: 'auto' }}>
             <h3 style={{ color: 'var(--success)' }}>Internal Headlines</h3>
-            <div style={{ overflowY: 'auto' }}>
+            <div>
               {data.headlines.internal.map((hl, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'start', gap: '15px', marginBottom: '10px' }}>
                   <span style={{ marginTop: '12px', fontWeight: 800, color: 'var(--text-light)', fontSize: '18px' }}>{i + 1}.</span>
@@ -583,7 +693,12 @@ function App() {
                 </div>
               ))}
             </div>
+            <button className="add-btn" onClick={() => {
+              const newHl = [...data.headlines.internal, '...'];
+              updateData('headlines.internal', newHl);
+            }}>+ Tambah Internal Headline</button>
           </div>
+
         </div>
       </div>
 
@@ -591,7 +706,7 @@ function App() {
       <div className={`slide ${currentSlide === 10 ? 'active' : ''}`}>
         <h1>To-Do List</h1>
         <div className="subtitle">Review minggu lalu & Action Plan</div>
-        <div className="card">
+        <div className="card" style={{ overflowY: 'auto', maxHeight: '70vh' }}>
           <ol className="todo-list">
             {data.todoList.map((item, i) => (
               <li key={i} className="todo-item">
@@ -622,12 +737,14 @@ function App() {
           </button>
         </div>
         <div className="subtitle">Identify, Discuss, Solve (60 Menit)</div>
-        <div className="ids-container">
-          <div className="ids-col">
-            <h3>1. Identify (Issues List)</h3>
-            <div id="ids-identify-list">
+        <div className="ids-container" style={{ display: 'flex', gap: '20px', height: '65vh' }}>
+          
+          <div className="ids-col card" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <h3 style={{ marginBottom: '15px' }}>1. Identify (Issues List)</h3>
+            {/* PERBAIKAN BUG #5: Mengurung daftar IDS dengan overflowY agar bisa di-scroll */}
+            <div id="ids-identify-list" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingRight: '5px' }}>
               {data.ids.issues.map((issue, i) => (
-                <div key={i} className="ids-item">
+                <div key={i} className="ids-item" style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', background: '#f8fafc', padding: '10px', borderRadius: '8px' }}>
                   <input 
                     type="checkbox" 
                     checked={issue.checked} 
@@ -636,7 +753,7 @@ function App() {
                       newIssues[i].checked = e.target.checked;
                       updateData('ids.issues', newIssues);
                     }}
-                    className="ids-checkbox" 
+                    style={{ marginTop: '5px' }}
                   />
                   <Editable 
                     className="ids-text" 
@@ -650,26 +767,33 @@ function App() {
                 </div>
               ))}
             </div>
-            <button onClick={() => addRow('ids.issues', { text: 'Masalah baru...', checked: false })} style={{ width: '100%', marginTop: '15px', background: '#f1f5f9', border: 'none', padding: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-light)' }}>+ Manual Issue</button>
+            <button onClick={addIssue} style={{ width: '100%', marginTop: '15px', background: '#f1f5f9', border: 'none', padding: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-light)', borderRadius: '8px' }}>+ Manual Issue</button>
           </div>
-          <div className="ids-col">
-            <h3>2. Discuss (Notes)</h3>
-            <Editable 
-              className="ids-notes" 
-              style={{ height: '100%', outline: 'none' }} 
-              value={data.ids.notes} 
-              onChange={(val) => updateData('ids.notes', val)} 
-            />
+          
+          <div className="ids-col card" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <h3 style={{ marginBottom: '15px' }}>2. Discuss (Notes)</h3>
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              <Editable 
+                className="ids-notes" 
+                style={{ height: '100%', minHeight: '300px' }} 
+                value={data.ids.notes} 
+                onChange={(val) => updateData('ids.notes', val)} 
+              />
+            </div>
           </div>
-          <div className="ids-col">
-            <h3>3. Solve (Action Items)</h3>
-            <Editable 
-              className="ids-solutions" 
-              style={{ height: '100%', outline: 'none' }} 
-              value={data.ids.solutions} 
-              onChange={(val) => updateData('ids.solutions', val)} 
-            />
+          
+          <div className="ids-col card" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <h3 style={{ marginBottom: '15px' }}>3. Solve (Action Items)</h3>
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              <Editable 
+                className="ids-solutions" 
+                style={{ height: '100%', minHeight: '300px' }} 
+                value={data.ids.solutions} 
+                onChange={(val) => updateData('ids.solutions', val)} 
+              />
+            </div>
           </div>
+
         </div>
       </div>
 
@@ -677,33 +801,36 @@ function App() {
       <div className={`slide ${currentSlide === 12 ? 'active' : ''}`}>
         <h1>Segmen Akhir</h1>
         <div className="subtitle">Rating Rapat & Penutup (5 Menit)</div>
-        <div className="card" style={{ justifyContent: 'center' }}>
+        <div className="card" style={{ justifyContent: 'center', height: '65vh', overflowY: 'auto' }}>
           <h3>Beri Rating Rapat (1-10)</h3>
-          <div className="rating-grid">
+          <div className="rating-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', justifyContent: 'center', margin: '30px 0' }}>
             {Object.keys(data.ratings).map((role) => (
-              <div key={role} className="rating-card">
-                <label style={{ textTransform: 'capitalize' }}>{role}</label>
+              <div key={role} className="rating-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#f8fafc', padding: '15px', borderRadius: '10px', width: '120px' }}>
+                <label style={{ textTransform: 'capitalize', fontSize: '14px', fontWeight: 600, color: 'var(--text-light)', marginBottom: '10px' }}>{role}</label>
                 <input 
                   type="number" 
                   min="1" max="10" 
-                  className="rating-input" 
+                  style={{ width: '60px', height: '50px', fontSize: '24px', textAlign: 'center', border: '2px solid #e2e8f0', borderRadius: '8px', fontWeight: 'bold' }}
                   value={data.ratings[role]} 
                   onChange={(e) => updateData(`ratings.${role}`, e.target.value)}
                 />
               </div>
             ))}
           </div>
-          <div className="rating-avg">
-            {(() => {
-              const vals = Object.values(data.ratings).map(v => parseFloat(v)).filter(v => !isNaN(v));
-              return vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : '0.0';
-            })()}
+          <div className="rating-avg" style={{ textAlign: 'center', marginTop: '30px' }}>
+            <div style={{ fontSize: '80px', fontWeight: 900, color: 'var(--primary)' }}>
+              {(() => {
+                const vals = Object.values(data.ratings).map(v => parseFloat(v)).filter(v => !isNaN(v));
+                return vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : '0.0';
+              })()}
+            </div>
           </div>
-          <p style={{ textAlign: 'center', color: 'var(--text-light)', marginTop: '20px', fontSize: '18px' }}>
+          <p style={{ textAlign: 'center', color: 'var(--text-light)', marginTop: '30px', fontSize: '18px', fontStyle: 'italic' }}>
             "Rapat yang hebat dimulai dari kedisiplinan dan diakhiri dengan komitmen."
           </p>
         </div>
       </div>
+
     </div>
   );
 }
