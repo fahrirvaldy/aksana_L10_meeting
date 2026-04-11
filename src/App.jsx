@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { db } from './firebase';
 import './App.css';
 
 // --- INITIAL DATA ---
@@ -168,108 +168,93 @@ const OutcomeButton = ({ outcome, onClick }) => (
 
 function App() {
   const [currentSlide, setCurrentSlide] = useState(0);
-  const [data, setData] = useState(() => {
-    const saved = localStorage.getItem('L10_Meeting_Data');
-    return saved ? JSON.parse(saved) : INITIAL_STATE;
-  });
+  const [data, setData] = useState(INITIAL_STATE);
+  const [isDataLoaded, setIsDataLoaded] = useState(false); 
 
-  const [attendances, setAttendances] = useState(() => {
-    const saved = localStorage.getItem('L10_Meeting_Data');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (parsed.attendances) return parsed.attendances;
-      if (parsed.attendance) {
-        return parsed.attendance.map((a, i) => ({ 
-          id: i + 1, name: a.role || a.name, checked: a.checked 
-        }));
-      }
-    }
-    return [
-      { id: 1, name: 'Owner', checked: false }, 
-      { id: 2, name: 'Integrator', checked: false }, 
-      { id: 3, name: 'Marketing', checked: false }, 
-      { id: 4, name: 'Creative', checked: false }
-    ];
-  });
+  const [attendances, setAttendances] = useState([
+    { id: 1, name: 'Owner', checked: false }, 
+    { id: 2, name: 'Integrator', checked: false }, 
+    { id: 3, name: 'Marketing', checked: false }, 
+    { id: 4, name: 'Creative', checked: false }
+  ]);
 
   const [timeLeft, setTimeLeft] = useState(90 * 60);
   const [isPaused, setIsPaused] = useState(true);
   const [cloudMsg, setCloudMsg] = useState('Menghubungkan...');
   const [cloudStatus, setCloudStatus] = useState('saving');
-  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
-  // PERBAIKAN BUG #4: Mengambil data dari Backend saat Mount
+  // 1. DENGARKAN PERUBAHAN DARI FIREBASE (Saat aplikasi dimuat)
   useEffect(() => {
-    const fetchCloudData = async () => {
-      try {
-        const res = await fetch('http://localhost:5000/api/l10');
-        const json = await res.json();
-        if (json.success && json.data) {
-          if (json.data.attendances) setAttendances(json.data.attendances);
-          setData(prev => ({ ...prev, ...json.data, attendances: undefined }));
-          setCloudMsg('Terhubung ke Cloud');
-          setCloudStatus('saved');
-        }
-      } catch (err) {
-        setCloudMsg('Offline Mode (Local Storage)');
-        setCloudStatus('error');
+    // Kita gunakan dokumen khusus bernama 'currentMeeting' di koleksi 'meetings'
+    const meetingDocRef = doc(db, 'meetings', 'currentMeeting');
+
+    const unsubscribe = onSnapshot(meetingDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        // Jika data ada di server, pakai data itu
+        setData(docSnap.data());
+        // Jika Anda ingin juga mensinkronkan attendance, silakan tambahkan logic di sini
+        if (docSnap.data().attendances) setAttendances(docSnap.data().attendances);
+      } else {
+        // Jika server kosong (baru pertama kali), pakai state awal
+        setData(INITIAL_STATE);
+        // (Opsional) Langsung simpan INITIAL_STATE ke server agar dokumennya terbuat
+        setDoc(meetingDocRef, INITIAL_STATE); 
       }
-    };
-    fetchCloudData();
+      setIsDataLoaded(true);
+      setCloudMsg('Terhubung ke Cloud');
+      setCloudStatus('saved');
+    }, (error) => {
+      console.error("Firebase sync error:", error);
+      setCloudMsg('Firebase sync error');
+      setCloudStatus('error');
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  // PERBAIKAN BUG #4: Mengirim data ke Backend via PUT
-  const saveAllData = useCallback(async () => {
-    const dataToSave = { ...data, attendances };
-    localStorage.setItem('L10_Meeting_Data', JSON.stringify(dataToSave));
-    
-    setCloudMsg('Menyimpan ke Cloud...');
-    setCloudStatus('saving');
+  // 2. FUNGSI UNTUK MENYIMPAN KE FIREBASE
+  // Panggil fungsi ini SETIAP KALI Anda mengubah state `data` di aplikasi
+  const updateDataToFirebase = async (newData) => {
+    const meetingDocRef = doc(db, 'meetings', 'currentMeeting');
     try {
-      const res = await fetch('http://localhost:5000/api/l10', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(dataToSave)
-      });
-      if (res.ok) {
-        setCloudMsg('Tersimpan di Cloud');
-        setCloudStatus('saved');
-      } else {
-        setCloudMsg('Gagal Menyimpan (Cloud)');
-        setCloudStatus('error');
-      }
-    } catch (err) {
-      setCloudMsg('Tersimpan Lokal (Offline)');
+      // Kita juga sertakan attendances agar ikut tersimpan jika ada perubahan
+      await setDoc(meetingDocRef, { ...newData, attendances }, { merge: true });
+      setCloudMsg('Tersimpan di Cloud');
       setCloudStatus('saved');
+    } catch (error) {
+      console.error("Gagal menyimpan ke Firebase:", error);
+      setCloudMsg('Gagal Menyimpan (Cloud)');
+      setCloudStatus('error');
     }
-  }, [data, attendances]);
+  };
 
   const debouncedSave = useCallback(() => {
     setCloudMsg('Mengetik...');
     setCloudStatus('saving');
   }, []);
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      saveAllData();
-    }, 1500); // Tunggu 1.5 detik setelah berhenti mengetik
-    return () => clearTimeout(timer);
-  }, [data, attendances, saveAllData]);
-
   // --- ATTENDANCE HANDLERS ---
   const handleAddAttendance = () => {
     const newId = attendances.length > 0 ? Math.max(...attendances.map(a => a.id)) + 1 : 1;
-    setAttendances([...attendances, { id: newId, name: '', checked: false }]);
+    const nextAttendances = [...attendances, { id: newId, name: '', checked: false }];
+    setAttendances(nextAttendances);
+    updateDataToFirebase({ ...data, attendances: nextAttendances });
     debouncedSave();
   };
 
   const handleDeleteAttendance = (id) => {
-    setAttendances(attendances.filter(a => a.id !== id));
+    const nextAttendances = attendances.filter(a => a.id !== id);
+    setAttendances(nextAttendances);
+    updateDataToFirebase({ ...data, attendances: nextAttendances });
     debouncedSave();
   };
 
   const handleUpdateAttendance = (id, field, value) => {
-    setAttendances(attendances.map(a => a.id === id ? { ...a, [field]: value } : a));
+    const nextAttendances = attendances.map(a => 
+      a.id === id ? { ...a, [field]: value } : a
+    );
+    setAttendances(nextAttendances);
+    updateDataToFirebase({ ...data, attendances: nextAttendances });
     debouncedSave();
   };
 
@@ -303,6 +288,8 @@ function App() {
         current = current[keys[i]];
       }
       current[keys[keys.length - 1]] = value;
+      // Panggil fungsi penyimpanan ke Firebase segera setelah update state
+      updateDataToFirebase(newData);
       return newData;
     });
     debouncedSave();
@@ -312,28 +299,38 @@ function App() {
     setData((prev) => {
       const newList = [...prev[listKey]];
       newList[index] = { ...newList[index], [field]: value };
-      return { ...prev, [listKey]: newList };
+      const next = { ...prev, [listKey]: newList };
+      updateDataToFirebase(next);
+      return next;
     });
     debouncedSave();
   };
 
   const addRow = (listKey, template) => {
-    setData((prev) => ({
-      ...prev,
-      [listKey]: [...prev[listKey], template]
-    }));
+    setData((prev) => {
+      const next = {
+        ...prev,
+        [listKey]: [...prev[listKey], template]
+      };
+      updateDataToFirebase(next);
+      return next;
+    });
     debouncedSave();
   };
 
   // PERBAIKAN BUG #2: Fungsi khusus untuk menambah issue IDS agar tidak error mencari prev['ids.issues']
   const addIssue = () => {
-    setData(prev => ({
-      ...prev,
-      ids: {
-        ...prev.ids,
-        issues: [...prev.ids.issues, { text: 'Masalah baru...', checked: false }]
-      }
-    }));
+    setData(prev => {
+      const next = {
+        ...prev,
+        ids: {
+          ...prev.ids,
+          issues: [...prev.ids.issues, { text: 'Masalah baru...', checked: false }]
+        }
+      };
+      updateDataToFirebase(next);
+      return next;
+    });
     debouncedSave();
   };
 
@@ -365,70 +362,22 @@ function App() {
         .filter(text => !existingTexts.includes(text))
         .map(text => ({ text, checked: false }));
         
-      return {
+      const next = {
         ...prev,
         ids: {
           ...prev.ids,
           issues: [...prev.ids.issues, ...newIssues]
         }
       };
+      updateDataToFirebase(next);
+      return next;
     });
     debouncedSave();
   };
 
-  const saveAsPDF = async () => {
-    setIsGeneratingPdf(true);
-    document.body.classList.add('generating-pdf');
-    
-    await new Promise(r => setTimeout(r, 500));
-    
-    const pdf = new jsPDF({ orientation: 'l', unit: 'mm', format: 'a4', compress: true });
-    const slides = document.querySelectorAll('.slide');
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = pdf.internal.pageSize.getHeight();
-
-    for (let i = 0; i < slides.length; i++) {
-      const slide = slides[i];
-      const originalDisplay = slide.style.display;
-      slide.style.display = 'flex'; 
-
-      try {
-        const canvas = await html2canvas(slide, {
-          scale: 3, 
-          useCORS: true,
-          logging: false,
-          backgroundColor: '#f8fafc',
-          windowWidth: 1920,
-          windowHeight: 1080
-        });
-        
-        const imgData = canvas.toDataURL('image/jpeg', 1.0);
-        const imgProps = pdf.getImageProperties(imgData);
-        const ratio = imgProps.width / imgProps.height;
-
-        let finalWidth = pdfWidth;
-        let finalHeight = pdfWidth / ratio;
-
-        if (finalHeight > pdfHeight) {
-          finalHeight = pdfHeight;
-          finalWidth = pdfHeight * ratio;
-        }
-
-        const x = (pdfWidth - finalWidth) / 2;
-        const y = (pdfHeight - finalHeight) / 2;
-
-        if (i > 0) pdf.addPage();
-        pdf.addImage(imgData, 'JPEG', x, y, finalWidth, finalHeight, undefined, 'FAST');
-      } catch (err) {
-        console.error("Slide capture failed", err);
-      } finally {
-        slide.style.display = originalDisplay;
-      }
-    }
-    
-    pdf.save('L10_Meeting_Report_HQ.pdf');
-    document.body.classList.remove('generating-pdf');
-    setIsGeneratingPdf(false);
+  const generatePDF = () => {
+    // Memanggil dialog cetak/Save as PDF bawaan OS/Browser
+    window.print();
   };
 
   const getCurrentDate = () => {
@@ -445,86 +394,106 @@ function App() {
   }, []);
 
   return (
-    <div className={isGeneratingPdf ? 'generating-pdf' : ''}>
+    <div id="pdf-content" className="max-w-7xl mx-auto p-4 md:p-8">
       
-      {/* --- SUNTIKAN CSS PERBAIKAN LAYOUT (FOOTER SAFE ZONE) --- */}
+      {/* --- CSS KHUSUS CETAK/PDF NATIVE (OPTIMIZED) --- */}
       <style>{`
-        /* 1. Kembalikan tombol aksi ke bawah, dan pindahkan Status Cloud ke TENGAH BAWAH */
-        .action-btn, .nav-controls { z-index: 100 !important; }
-        .cloud-status { 
-          position: fixed !important; 
-          bottom: 30px !important; 
-          left: 50% !important; 
-          transform: translateX(-50%) !important; /* Trik CSS untuk persis di tengah */
-          margin: 0 !important;
-          z-index: 100 !important; 
+        @media print {
+          @page { 
+            size: A4 landscape; 
+            margin: 12mm; 
+          }
+          /* Lepaskan semua batasan tinggi dan scroll pada body */
+          html, body, #root, #pdf-content { 
+            height: auto !important; 
+            overflow: visible !important;
+            background-color: white !important; 
+            -webkit-print-color-adjust: exact; 
+            print-color-adjust: exact; 
+          }
+          /* Sembunyikan elemen UI yang tidak perlu */
+          button, [data-html2canvas-ignore="true"], .nav-controls, .action-btn { 
+            display: none !important; 
+          }
+          /* --- KUNCI PERBAIKAN LAYOUT --- */
+          .slide {
+            display: block !important; /* JANGAN pakai flex, browser akan memecah tabel */
+            width: 100% !important;
+            height: auto !important;
+            min-height: 0 !important; /* Hapus batasan 100vh */
+            overflow: visible !important;
+            position: relative !important;
+            page-break-after: always !important; /* Paksa 1 Slide = 1 Halaman kertas */
+            break-after: page !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+          /* Cegah elemen di dalam slide robek di tengah-tengah */
+          table, tr, td, th, .bg-white, .rounded-xl, .card { 
+            page-break-inside: avoid !important; 
+            break-inside: avoid !important; 
+          }
+          /* Bersihkan bayangan agar tinta hemat dan terlihat profesional */
+          * {
+            box-shadow: none !important;
+          }
+          h1 { font-size: 24pt !important; }
+          .subtitle { font-size: 14pt !important; }
         }
-
-        /* 2. BATASI TINGGI KONTEN BAWAH (Safe Zone) */
-        .card, .ids-col { 
-          max-height: 65vh !important; 
-          margin-bottom: 80px !important; 
-        }
-        
-        .card > div, .card > table, .card > ol {
-          padding-bottom: 40px !important;
-        }
-
-        /* 3. Override khusus untuk kartu Headlines agar tingginya simetris 50:50 */
-        .headline-card { margin-bottom: 0 !important; max-height: none !important; flex: 1; }
+        .cloud-status.saving { color: var(--warning); }
+        .cloud-status.saved { color: var(--success); }
+        .cloud-status.error { color: var(--danger); }
       `}</style>
 
-      {/* FLOATING TIMER */}
-      <div className="floating-timer">
-        <i className="fa-regular fa-clock"></i>
-        <span>{formatTime(timeLeft)}</span>
-        <div className="timer-controls">
-          <i className={`fa-solid ${isPaused ? 'fa-play' : 'fa-pause'}`} onClick={() => setIsPaused(!isPaused)}></i>
-          <i className="fa-solid fa-rotate-right" onClick={() => { setIsPaused(true); setTimeLeft(90 * 60); }}></i>
+      {/* HEADER: Timer & Judul Utama */}
+      <div data-html2canvas-ignore="true" className="flex flex-col md:flex-row items-center justify-between gap-6 mb-8 pb-4 border-b md:sticky md:top-0 z-40 bg-white/90 backdrop-blur-md md:-mx-8 md:px-8 md:-mt-8 md:pt-8">
+        <div className="text-center md:text-left">
+          <h1 className="text-3xl md:text-5xl font-bold text-slate-800 m-0">L10 MEETING</h1>
+          <p className="text-aksana-accent font-semibold text-lg md:text-xl m-0">Ammarkids Operational</p>
         </div>
-      </div>
 
-      {/* CONTROLS */}
-      <div className="nav-controls">
-        <button className="nav-btn" onClick={(e) => { e.stopPropagation(); prevSlide(); }}><i className="fa-solid fa-chevron-left"></i></button>
-        <button className="nav-btn" onClick={(e) => { e.stopPropagation(); nextSlide(); }}><i className="fa-solid fa-chevron-right"></i></button>
-      </div>
-
-      <button className="action-btn" onClick={saveAsPDF}>
-        <i className="fa-solid fa-file-pdf"></i> {isGeneratingPdf ? 'Processing...' : 'High Quality PDF'}
-      </button>
-
-      {/* CLOUD STATUS */}
-      <div className={`cloud-status ${cloudStatus === 'error' ? 'error' : 'saved'}`}>
-        <i className="fa-solid fa-cloud"></i> <span>{cloudMsg}</span>
+        {/* TIMER COMPONENT */}
+        <div className="flex items-center gap-4 bg-white px-6 py-3 rounded-2xl shadow-sm border border-slate-200">
+          <div className="flex items-center gap-3 text-aksana-accent text-2xl font-mono font-bold">
+            <i className="fa-regular fa-clock text-xl"></i>
+            <span>{formatTime(timeLeft)}</span>
+          </div>
+          <div className="flex items-center gap-3 border-l pl-4">
+            <button 
+              onClick={() => setIsPaused(!isPaused)}
+              className="w-10 h-10 flex items-center justify-center rounded-full bg-slate-100 text-slate-600 hover:bg-aksana-primary hover:text-white transition-all"
+            >
+              <i className={`fa-solid ${isPaused ? 'fa-play' : 'fa-pause'}`}></i>
+            </button>
+            <button 
+              onClick={() => { setIsPaused(true); setTimeLeft(90 * 60); }}
+              className="w-10 h-10 flex items-center justify-center rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-all"
+            >
+              <i className="fa-solid fa-rotate-right"></i>
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* SLIDES */}
 
-      {/* 1. TITLE */}
+      {/* 1. TITLE PAGE - Date Only now as Title is global */}
       <div className={`slide ${currentSlide === 0 ? 'active' : ''}`}>
         <div className="card" style={{ justifyContent: 'center', alignItems: 'center', textAlign: 'center', border: 'none', background: 'transparent', boxShadow: 'none' }}>
-          <h1 style={{ fontSize: '64px', color: 'var(--primary)', marginBottom: '10px' }}>LEVEL 10 MEETING</h1>
-          <h2 style={{ fontSize: '36px', color: 'var(--accent)', marginBottom: '50px', fontWeight: 500 }}>Ammarkids Operational</h2>
-          <div style={{ background: 'white', padding: '30px 60px', borderRadius: '20px', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }}>
+          <div style={{ background: 'white', padding: '40px 60px', borderRadius: '24px', boxShadow: '0 20px 50px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' }}>
             
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-              <div style={{ fontSize: '16px', color: 'var(--text-light)', textTransform: 'uppercase', letterSpacing: '1px' }}>Tanggal Rapat</div>
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
+              <div style={{ fontSize: '14px', color: 'var(--text-light)', textTransform: 'uppercase', letterSpacing: '2px', fontWeight: 700 }}>Tanggal Rapat</div>
               <button 
                 onClick={() => updateData('meetingDate', getCurrentDate())} 
-                style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '14px', padding: '5px', borderRadius: '50%' }} 
+                style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '14px', padding: '5px' }} 
                 title="Set Otomatis ke Hari Ini"
-                className="hover:bg-slate-100 transition-colors"
               >
                 <i className="fa-solid fa-arrows-rotate"></i>
               </button>
             </div>
 
-            {/* TANGGAL SEKARANG DIBUAT STATIS (TIDAK BISA DIKETIK MANUAL) */}
-            <div 
-              className="editable-date"
-              style={{ fontSize: '32px', fontWeight: 800, color: 'var(--primary)', textAlign: 'center', padding: '5px 0' }}
-            >
+            <div className="text-3xl md:text-5xl font-extrabold text-aksana-primary">
               {data.meetingDate}
             </div>
           </div>
@@ -533,34 +502,49 @@ function App() {
 
       {/* 2. SEGMEN AWAL */}
       <div className={`slide ${currentSlide === 1 ? 'active' : ''}`}>
-        <h1>Segmen Awal</h1>
-        <div className="subtitle">Kehadiran & Kabar Baik (5 Menit)</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px', height: '100%' }}>
-          <div className="card" style={{ overflowY: 'auto', maxHeight: '65vh' }}>
+        <div className="flex flex-col gap-1 mb-4">
+          <h1>Segmen Awal</h1>
+          <div className="subtitle">Kehadiran & Kabar Baik (5 Menit)</div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 h-auto">
+          <div className="card" style={{ height: 'auto' }}>
             <h3>Daftar Hadir</h3>
-            <div id="attendance-grid" className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+            <div id="attendance-grid" className="flex flex-col gap-3 mt-4">
               {attendances.map((item) => (
-                <div key={item.id} className="flex items-center gap-3 group bg-slate-50 p-2 rounded-lg border border-transparent hover:border-slate-200 transition-all">
-                  <input 
-                    type="checkbox" 
-                    checked={item.checked}
-                    onChange={(e) => handleUpdateAttendance(item.id, 'checked', e.target.checked)}
-                    className="w-5 h-5 accent-aksana-primary cursor-pointer flex-shrink-0"
-                  />
-                  <input 
-                    type="text" 
-                    value={item.name}
-                    onChange={(e) => handleUpdateAttendance(item.id, 'name', e.target.value)}
-                    placeholder="Nama Divisi..."
-                    className="flex-grow bg-transparent border-none outline-none font-medium text-slate-700 focus:ring-0 p-0"
-                  />
-                  <button 
-                    onClick={() => handleDeleteAttendance(item.id)}
-                    className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity p-1"
-                    title="Hapus Divisi"
-                  >
-                    <i className="fa-solid fa-xmark"></i>
-                  </button>
+                <div 
+                  key={item.id} 
+                  className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100 w-full transition-all group hover:border-slate-200"
+                >
+                  <div className="flex items-center gap-3 flex-grow">
+                    <input
+                      type="checkbox"
+                      checked={item.checked}
+                      onChange={(e) => handleUpdateAttendance(item.id, 'checked', e.target.checked)}
+                      className="w-5 h-5 accent-aksana-primary cursor-pointer flex-shrink-0"
+                    />
+                    
+                    {item.id > 4 ? (
+                      <input
+                        type="text"
+                        value={item.name}
+                        onChange={(e) => handleUpdateAttendance(item.id, 'name', e.target.value)}
+                        placeholder="Nama Divisi..."
+                        className="bg-transparent border-none focus:ring-0 p-0 text-sm font-medium w-full text-slate-700 placeholder-slate-400 outline-none"
+                      />
+                    ) : (
+                      <span className="text-sm font-medium text-slate-700">{item.name}</span>
+                    )}
+                  </div>
+
+                  {item.id > 4 && (
+                    <button
+                      onClick={() => handleDeleteAttendance(item.id)}
+                      className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-colors flex-shrink-0"
+                      title="Hapus Divisi"
+                    >
+                      <i className="fa-solid fa-xmark"></i>
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -573,7 +557,7 @@ function App() {
           </div>
           <div className="card">
             <h3>Good News (Kabar Syukur)</h3>
-            <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '20px', fontSize: '18px' }}>
+            <div className="mt-5 flex flex-col gap-5 text-lg">
               <div><strong style={{ color: 'var(--accent)' }}>Owner:</strong> 
                 <Editable className="input-box" value={data.goodNews.owner} onChange={(val) => updateData('goodNews.owner', val)} style={{ marginTop: '5px' }} />
               </div>
@@ -598,31 +582,35 @@ function App() {
         { title: 'Gudang', key: 'gudangKPI' },
       ].map((sheet, index) => (
         <div key={sheet.key} className={`slide ${currentSlide === (index + 2) ? 'active' : ''}`}>
-          <h1>Scorecard: {sheet.title}</h1>
-          <div className="subtitle">Review KPI & Output</div>
-          <div className="card" style={{ overflowY: 'auto', maxHeight: '70vh' }}>
-            <table>
-              <thead>
-                <tr>
-                  <th style={{ width: '30%' }}>KPI</th>
-                  <th style={{ width: '20%' }}>Target</th>
-                  <th style={{ width: '20%' }}>Realisasi</th>
-                  <th style={{ width: '15%', textAlign: 'center' }}>Jenis</th>
-                  <th style={{ width: '15%', textAlign: 'center' }}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data[sheet.key].map((item, i) => (
-                  <tr key={i}>
-                    <td><Editable value={item.kpi} onChange={(val) => updateListItem(sheet.key, i, 'kpi', val)} /></td>
-                    <td><Editable value={item.target} onChange={(val) => updateListItem(sheet.key, i, 'target', val)} /></td>
-                    <td><Editable value={item.real} onChange={(val) => updateListItem(sheet.key, i, 'real', val)} /></td>
-                    <td align="center"><JenisButton jenis={item.jenis} onClick={() => updateListItem(sheet.key, i, 'jenis', item.jenis === 'outcome' ? 'output' : 'outcome')} /></td>
-                    <td align="center"><StatusButton status={item.status} onClick={() => updateListItem(sheet.key, i, 'status', item.status === 'on' ? 'off' : 'on')} /></td>
+          <div className="flex flex-col gap-1 mb-4">
+            <h1>Scorecard: {sheet.title}</h1>
+            <div className="subtitle">Review KPI & Output</div>
+          </div>
+          <div className="card" style={{ height: 'auto' }}>
+            <div className="overflow-x-auto w-full">
+              <table className="min-w-[600px] md:min-w-full">
+                <thead>
+                  <tr>
+                    <th style={{ width: '30%' }}>KPI</th>
+                    <th style={{ width: '20%' }}>Target</th>
+                    <th style={{ width: '20%' }}>Realisasi</th>
+                    <th style={{ width: '15%', textAlign: 'center' }}>Jenis</th>
+                    <th style={{ width: '15%', textAlign: 'center' }}>Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {data[sheet.key].map((item, i) => (
+                    <tr key={i}>
+                      <td><Editable value={item.kpi} onChange={(val) => updateListItem(sheet.key, i, 'kpi', val)} /></td>
+                      <td><Editable value={item.target} onChange={(val) => updateListItem(sheet.key, i, 'target', val)} /></td>
+                      <td><Editable value={item.real} onChange={(val) => updateListItem(sheet.key, i, 'real', val)} /></td>
+                      <td align="center"><JenisButton jenis={item.jenis} onClick={() => updateListItem(sheet.key, i, 'jenis', item.jenis === 'outcome' ? 'output' : 'outcome')} /></td>
+                      <td align="center"><StatusButton status={item.status} onClick={() => updateListItem(sheet.key, i, 'status', item.status === 'on' ? 'off' : 'on')} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
             <button className="add-btn" onClick={() => addRow(sheet.key, { kpi: '...', target: '...', real: '...', jenis: 'outcome', status: 'on' })}>+ Tambah KPI</button>
           </div>
         </div>
@@ -630,72 +618,86 @@ function App() {
 
       {/* 8. ROCK REVIEW */}
       <div className={`slide ${currentSlide === 8 ? 'active' : ''}`}>
-        <h1>Rock Review</h1>
-        <div className="subtitle">Prioritas 90 Hari</div>
-        <div className="card" style={{ overflowY: 'auto', maxHeight: '70vh' }}>
-          <table>
-            <thead>
-              <tr><th style={{width: '15%'}}>Owner</th><th style={{width: '40%'}}>Rock</th><th align="center" style={{width: '15%'}}>Status</th><th style={{width: '30%'}}>Catatan</th></tr>
-            </thead>
-            <tbody>
-              {data.rockReview.map((item, i) => (
-                <tr key={i}>
-                  <td>{item.owner}</td>
-                  <td><Editable value={item.rock} onChange={(val) => updateListItem('rockReview', i, 'rock', val)} /></td>
-                  <td align="center"><StatusButton status={item.status} onClick={() => updateListItem('rockReview', i, 'status', item.status === 'on' ? 'off' : 'on')} /></td>
-                  <td><Editable value={item.note} onChange={(val) => updateListItem('rockReview', i, 'note', val)} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="flex flex-col gap-1 mb-4">
+          <h1>Rock Review</h1>
+          <div className="subtitle">Prioritas 90 Hari</div>
+        </div>
+        <div className="card" style={{ height: 'auto' }}>
+          <div className="overflow-x-auto w-full">
+            <table className="min-w-[600px] md:min-w-full">
+              <thead>
+                <tr><th style={{width: '15%'}}>Owner</th><th style={{width: '40%'}}>Rock</th><th align="center" style={{width: '15%'}}>Status</th><th style={{width: '30%'}}>Catatan</th></tr>
+              </thead>
+              <tbody>
+                {data.rockReview.map((item, i) => (
+                  <tr key={i}>
+                    <td>{item.owner}</td>
+                    <td><Editable value={item.rock} onChange={(val) => updateListItem('rockReview', i, 'rock', val)} /></td>
+                    <td align="center"><StatusButton status={item.status} onClick={() => updateListItem('rockReview', i, 'status', item.status === 'on' ? 'off' : 'on')} /></td>
+                    <td><Editable value={item.note} onChange={(val) => updateListItem('rockReview', i, 'note', val)} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
       {/* 9. HEADLINES */}
       <div className={`slide ${currentSlide === 9 ? 'active' : ''}`}>
-        <h1>Headlines</h1>
-        <div className="subtitle">Berita Penting (Customer & Internal)</div>
+        <div className="flex flex-col gap-1 mb-4">
+          <h1>Headlines</h1>
+          <div className="subtitle">Berita Penting (Customer & Internal)</div>
+        </div>
         
-        {/* Wrapper Flexbox untuk membagi tinggi 50:50 */}
-        <div className="stacked-layout" style={{ display: 'flex', flexDirection: 'column', gap: '20px', height: '65vh', paddingBottom: '20px' }}>
+        {/* Wrapper Flexbox untuk membagi tinggi, responsif ke samping di desktop */}
+        <div className="flex flex-col md:flex-row gap-5 md:gap-6 h-auto pb-5">
           
-          <div className="card headline-card" style={{ overflowY: 'auto' }}>
+          <div className="card headline-card flex-1 min-h-[300px] md:min-h-0">
             <h3 style={{ color: 'var(--accent)' }}>Customer Headlines</h3>
-            <div>
+            <div className="mt-4">
               {data.headlines.customer.map((hl, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'start', gap: '15px', marginBottom: '10px' }}>
-                  <span style={{ marginTop: '12px', fontWeight: 800, color: 'var(--text-light)', fontSize: '18px' }}>{i + 1}.</span>
+                <div key={i} className="flex items-start gap-4 mb-3">
+                  <span className="mt-3 font-extrabold text-slate-400 text-lg">{i + 1}.</span>
                   <Editable className="input-box" value={hl} onChange={(val) => {
                     const newHl = [...data.headlines.customer];
                     newHl[i] = val;
-                    updateData('headlines.customer', newHl);
+                    const nextData = { ...data, headlines: { ...data.headlines, customer: newHl } };
+                    setData(nextData);
+                    updateDataToFirebase(nextData);
                   }} />
                 </div>
               ))}
             </div>
             <button className="add-btn" onClick={() => {
               const newHl = [...data.headlines.customer, '...'];
-              updateData('headlines.customer', newHl);
+              const nextData = { ...data, headlines: { ...data.headlines, customer: newHl } };
+              setData(nextData);
+              updateDataToFirebase(nextData);
             }}>+ Tambah Customer Headline</button>
           </div>
           
-          <div className="card headline-card" style={{ overflowY: 'auto' }}>
+          <div className="card headline-card flex-1 min-h-[300px] md:min-h-0">
             <h3 style={{ color: 'var(--success)' }}>Internal Headlines</h3>
-            <div>
+            <div className="mt-4">
               {data.headlines.internal.map((hl, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'start', gap: '15px', marginBottom: '10px' }}>
-                  <span style={{ marginTop: '12px', fontWeight: 800, color: 'var(--text-light)', fontSize: '18px' }}>{i + 1}.</span>
+                <div key={i} className="flex items-start gap-4 mb-3">
+                  <span className="mt-3 font-extrabold text-slate-400 text-lg">{i + 1}.</span>
                   <Editable className="input-box" value={hl} onChange={(val) => {
                     const newHl = [...data.headlines.internal];
                     newHl[i] = val;
-                    updateData('headlines.internal', newHl);
+                    const nextData = { ...data, headlines: { ...data.headlines, internal: newHl } };
+                    setData(nextData);
+                    updateDataToFirebase(nextData);
                   }} />
                 </div>
               ))}
             </div>
             <button className="add-btn" onClick={() => {
               const newHl = [...data.headlines.internal, '...'];
-              updateData('headlines.internal', newHl);
+              const nextData = { ...data, headlines: { ...data.headlines, internal: newHl } };
+              setData(nextData);
+              updateDataToFirebase(nextData);
             }}>+ Tambah Internal Headline</button>
           </div>
 
@@ -704,21 +706,23 @@ function App() {
 
       {/* 10. TO-DO LIST */}
       <div className={`slide ${currentSlide === 10 ? 'active' : ''}`}>
-        <h1>To-Do List</h1>
-        <div className="subtitle">Review minggu lalu & Action Plan</div>
-        <div className="card" style={{ overflowY: 'auto', maxHeight: '70vh' }}>
+        <div className="flex flex-col gap-1 mb-4">
+          <h1>To-Do List</h1>
+          <div className="subtitle">Review minggu lalu & Action Plan</div>
+        </div>
+        <div className="card" style={{ height: 'auto' }}>
           <ol className="todo-list">
             {data.todoList.map((item, i) => (
-              <li key={i} className="todo-item">
+              <li key={i} className="todo-item flex flex-col sm:flex-row items-start sm:items-center gap-4">
                 <span className="todo-number">{i + 1}.</span>
-                <div className="todo-text-wrapper">
+                <div className="todo-text-wrapper flex-grow w-full">
                   <Editable className="input-box" value={item.text} onChange={(val) => updateListItem('todoList', i, 'text', val)} />
-                  <div style={{ display: 'flex', alignItems: 'center', marginTop: '8px' }}>
-                    <span className="owner-label">Owner:</span>
+                  <div className="flex items-center mt-2">
+                    <span className="owner-label text-sm font-semibold mr-2">Owner:</span>
                     <Editable className="owner-input" value={item.owner} onChange={(val) => updateListItem('todoList', i, 'owner', val)} />
                   </div>
                 </div>
-                <div className="todo-action">
+                <div className="todo-action flex-shrink-0 self-end sm:self-center">
                   <OutcomeButton outcome={item.outcome} onClick={() => updateListItem('todoList', i, 'outcome', item.outcome === 'done' ? 'not' : 'done')} />
                 </div>
               </li>
@@ -730,30 +734,34 @@ function App() {
 
       {/* 11. IDS */}
       <div className={`slide ${currentSlide === 11 ? 'active' : ''}`}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h1>IDS Session</h1>
-          <button onClick={populateIDS} style={{ background: 'var(--danger)', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px', fontWeight: 600 }}>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-2">
+          <div className="flex flex-col gap-1">
+            <h1>IDS Session</h1>
+            <div className="subtitle">Identify, Discuss, Solve (60 Menit)</div>
+          </div>
+          <button onClick={populateIDS} className="bg-red-600 text-white border-none py-2 px-4 rounded-md cursor-pointer text-sm font-semibold hover:bg-red-700 transition-colors w-full sm:w-auto">
             <i className="fa-solid fa-sync"></i> Tarik Data Off-Track
           </button>
         </div>
-        <div className="subtitle">Identify, Discuss, Solve (60 Menit)</div>
-        <div className="ids-container" style={{ display: 'flex', gap: '20px', height: '65vh' }}>
+        
+        <div className="ids-container flex flex-col md:flex-row gap-5 h-auto mt-4">
           
-          <div className="ids-col card" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <h3 style={{ marginBottom: '15px' }}>1. Identify (Issues List)</h3>
-            {/* PERBAIKAN BUG #5: Mengurung daftar IDS dengan overflowY agar bisa di-scroll */}
-            <div id="ids-identify-list" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingRight: '5px' }}>
+          <div className="ids-col card flex-1 flex flex-col min-h-[300px]">
+            <h3 className="mb-4">1. Identify (Issues List)</h3>
+            <div id="ids-identify-list" className="flex flex-col gap-3 pr-1">
               {data.ids.issues.map((issue, i) => (
-                <div key={i} className="ids-item" style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', background: '#f8fafc', padding: '10px', borderRadius: '8px' }}>
+                <div key={i} className="ids-item flex gap-3 items-start bg-slate-50 p-3 rounded-lg">
                   <input 
                     type="checkbox" 
                     checked={issue.checked} 
                     onChange={(e) => {
                       const newIssues = [...data.ids.issues];
                       newIssues[i].checked = e.target.checked;
-                      updateData('ids.issues', newIssues);
+                      const nextData = { ...data, ids: { ...data.ids, issues: newIssues } };
+                      setData(nextData);
+                      updateDataToFirebase(nextData);
                     }}
-                    style={{ marginTop: '5px' }}
+                    className="mt-1 flex-shrink-0"
                   />
                   <Editable 
                     className="ids-text" 
@@ -761,35 +769,45 @@ function App() {
                     onChange={(val) => {
                       const newIssues = [...data.ids.issues];
                       newIssues[i].text = val;
-                      updateData('ids.issues', newIssues);
+                      const nextData = { ...data, ids: { ...data.ids, issues: newIssues } };
+                      setData(nextData);
+                      updateDataToFirebase(nextData);
                     }} 
                   />
                 </div>
               ))}
             </div>
-            <button onClick={addIssue} style={{ width: '100%', marginTop: '15px', background: '#f1f5f9', border: 'none', padding: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-light)', borderRadius: '8px' }}>+ Manual Issue</button>
+            <button onClick={addIssue} className="w-full mt-4 bg-slate-100 border-none p-3 cursor-pointer font-semibold text-sm text-slate-500 rounded-lg hover:bg-slate-200 transition-colors">+ Manual Issue</button>
           </div>
           
-          <div className="ids-col card" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <h3 style={{ marginBottom: '15px' }}>2. Discuss (Notes)</h3>
-            <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="ids-col card flex-1 flex flex-col min-h-[300px]">
+            <h3 className="mb-4">2. Discuss (Notes)</h3>
+            <div className="w-full">
               <Editable 
                 className="ids-notes" 
-                style={{ height: '100%', minHeight: '300px' }} 
+                style={{ width: '100%', minHeight: '200px' }} 
                 value={data.ids.notes} 
-                onChange={(val) => updateData('ids.notes', val)} 
+                onChange={(val) => {
+                  const nextData = { ...data, ids: { ...data.ids, notes: val } };
+                  setData(nextData);
+                  updateDataToFirebase(nextData);
+                }} 
               />
             </div>
           </div>
           
-          <div className="ids-col card" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <h3 style={{ marginBottom: '15px' }}>3. Solve (Action Items)</h3>
-            <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="ids-col card flex-1 flex flex-col min-h-[300px]">
+            <h3 className="mb-4">3. Solve (Action Items)</h3>
+            <div className="w-full">
               <Editable 
                 className="ids-solutions" 
-                style={{ height: '100%', minHeight: '300px' }} 
+                style={{ width: '100%', minHeight: '200px' }} 
                 value={data.ids.solutions} 
-                onChange={(val) => updateData('ids.solutions', val)} 
+                onChange={(val) => {
+                  const nextData = { ...data, ids: { ...data.ids, solutions: val } };
+                  setData(nextData);
+                  updateDataToFirebase(nextData);
+                }} 
               />
             </div>
           </div>
@@ -799,26 +817,38 @@ function App() {
 
       {/* 12. RATING */}
       <div className={`slide ${currentSlide === 12 ? 'active' : ''}`}>
-        <h1>Segmen Akhir</h1>
-        <div className="subtitle">Rating Rapat & Penutup (5 Menit)</div>
-        <div className="card" style={{ justifyContent: 'center', height: '65vh', overflowY: 'auto' }}>
+        <div className="flex flex-col gap-1 mb-4">
+          <h1>Segmen Akhir</h1>
+          <div className="subtitle">Rating Rapat & Penutup (5 Menit)</div>
+        </div>
+        <div className="card" style={{ height: 'auto' }}>
           <h3>Beri Rating Rapat (1-10)</h3>
-          <div className="rating-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', justifyContent: 'center', margin: '30px 0' }}>
-            {Object.keys(data.ratings).map((role) => (
-              <div key={role} className="rating-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#f8fafc', padding: '15px', borderRadius: '10px', width: '120px' }}>
-                <label style={{ textTransform: 'capitalize', fontSize: '14px', fontWeight: 600, color: 'var(--text-light)', marginBottom: '10px' }}>{role}</label>
+          
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 my-8">
+            {['owner', 'integrator', 'marketing', 'creative', 'rnd', 'ppic', 'gudang', 'finance', 'moderator'].map((role) => (
+              <div key={role} className="flex flex-col items-center bg-slate-50 p-4 rounded-xl border border-slate-100 shadow-sm">
+                <label className="capitalize text-xs font-bold text-slate-400 mb-2 tracking-wider">
+                  {role}
+                </label>
                 <input 
                   type="number" 
                   min="1" max="10" 
-                  style={{ width: '60px', height: '50px', fontSize: '24px', textAlign: 'center', border: '2px solid #e2e8f0', borderRadius: '8px', fontWeight: 'bold' }}
-                  value={data.ratings[role]} 
-                  onChange={(e) => updateData(`ratings.${role}`, e.target.value)}
+                  className="w-16 h-12 text-2xl text-center border-2 border-slate-200 rounded-lg font-bold text-aksana-primary focus:border-aksana-accent focus:ring-4 focus:ring-blue-50 outline-none transition-all"
+                  value={data.ratings[role] || ''} 
+                  onChange={(e) => {
+                    const newRating = { ...data.ratings, [role]: e.target.value };
+                    const nextData = { ...data, ratings: newRating };
+                    setData(nextData);
+                    updateDataToFirebase(nextData);
+                  }}
                 />
               </div>
             ))}
           </div>
-          <div className="rating-avg" style={{ textAlign: 'center', marginTop: '30px' }}>
-            <div style={{ fontSize: '80px', fontWeight: 900, color: 'var(--primary)' }}>
+
+          <div className="flex flex-col items-center mt-8 pt-8 border-t border-slate-100">
+            <div className="text-sm font-bold text-slate-400 uppercase tracking-[3px] mb-2">Rata-Rata Rating</div>
+            <div className="text-7xl md:text-9xl font-black text-aksana-primary leading-none">
               {(() => {
                 const vals = Object.values(data.ratings).map(v => parseFloat(v)).filter(v => !isNaN(v));
                 return vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : '0.0';
@@ -829,6 +859,46 @@ function App() {
             "Rapat yang hebat dimulai dari kedisiplinan dan diakhiri dengan komitmen."
           </p>
         </div>
+      </div>
+
+      {/* FOOTER: Controls, Cloud Status, Action */}
+      <div data-html2canvas-ignore="true" className="flex flex-col md:flex-row items-center justify-between gap-6 mt-12 pt-4 border-t border-slate-200 pb-6 md:sticky md:bottom-0 z-40 bg-white/90 backdrop-blur-md md:-mx-8 md:px-8 md:-mb-8 md:pb-8">
+        
+        {/* Kiri: Tombol PDF */}
+        <div className="w-full md:w-auto flex justify-center md:justify-start">
+          <button 
+            className="flex items-center gap-2 bg-slate-800 text-white px-6 py-3 rounded-xl font-bold hover:bg-slate-700 transition-all shadow-md active:scale-95 text-sm" 
+            onClick={generatePDF}
+          >
+            <i className="fa-solid fa-file-pdf"></i> High Quality PDF Report
+          </button>
+        </div>
+
+        {/* Tengah: Indikator Cloud */}
+        <div className={`flex items-center justify-center gap-2 px-4 py-2 rounded-full bg-white border shadow-sm text-sm font-medium ${cloudStatus === 'error' ? 'text-red-500 border-red-100' : 'text-aksana-primary border-slate-100'}`}>
+          <i className={`fa-solid ${cloudStatus === 'saving' ? 'fa-spinner fa-spin' : 'fa-cloud'}`}></i>
+          <span>{cloudMsg}</span>
+        </div>
+
+        {/* Kanan: Navigasi Prev/Next */}
+        <div className="w-full md:w-auto flex justify-center md:justify-end gap-4">
+          <button 
+            className="w-14 h-14 flex items-center justify-center rounded-full bg-aksana-primary text-white shadow-lg hover:bg-aksana-accent transition-all active:scale-90"
+            onClick={(e) => { e.stopPropagation(); prevSlide(); }}
+          >
+            <i className="fa-solid fa-chevron-left text-xl"></i>
+          </button>
+          <div className="flex items-center justify-center font-bold text-slate-400 bg-slate-50 px-4 rounded-xl border">
+            {currentSlide + 1} / 13
+          </div>
+          <button 
+            className="w-14 h-14 flex items-center justify-center rounded-full bg-aksana-primary text-white shadow-lg hover:bg-aksana-accent transition-all active:scale-90"
+            onClick={(e) => { e.stopPropagation(); nextSlide(); }}
+          >
+            <i className="fa-solid fa-chevron-right text-xl"></i>
+          </button>
+        </div>
+
       </div>
 
     </div>
