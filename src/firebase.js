@@ -1,6 +1,6 @@
 // Import fungsi-fungsi inisialisasi dari SDK Firebase
 import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore"; // Modul Database (Firestore)
+import { initializeFirestore } from "firebase/firestore"; // Modul Database (Firestore)
 
 // TODO: TIMPA objek konfigurasi di bawah ini dengan milik Anda dari Firebase Console!
 const firebaseConfig = {
@@ -16,5 +16,7 @@ const firebaseConfig = {
 // 1. Inisialisasi Aplikasi Firebase
 const app = initializeApp(firebaseConfig);
 
-// 2. Inisialisasi Layanan Database (Diekspor agar bisa dipakai di file komponen React mana pun)
-export const db = getFirestore(app);
+// 2. Inisialisasi Layanan Database dengan Force Long Polling
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+});
