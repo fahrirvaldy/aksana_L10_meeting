@@ -268,19 +268,42 @@ function App() {
   };
 
   const populateIDS = () => {
-    const offTrackKPIs = [];
+    const currentlyOffTrack = [];
+    const currentlyOnTrack = [];
+
+    // 1. Pindai semua tabel untuk mendata mana yang Off-Track dan On-Track
     ['marketingKPI', 'creativeKPI', 'rndKPI', 'ppicKPI', 'financeKPI', 'gudangKPI', 'rockReview'].forEach(key => {
       if (data[key]) {
         data[key].forEach(item => {
-          if (item.status === 'off') offTrackKPIs.push(item.kpi || item.rock);
+          const text = item.kpi || item.rock;
+          if (text) {
+            if (item.status === 'off') {
+              currentlyOffTrack.push(text);
+            } else {
+              currentlyOnTrack.push(text);
+            }
+          }
         });
       }
     });
 
     setData(prev => {
-      const existingTexts = prev.ids.issues.map(i => i.text);
-      const newIssues = offTrackKPIs.filter(text => !existingTexts.includes(text)).map(text => ({ text, checked: false }));
-      return { ...prev, ids: { ...prev.ids, issues: [...prev.ids.issues, ...newIssues] } };
+      // 2. SAPU BERSIH: Hapus issue di daftar IDS jika teksnya sama persis dengan KPI/Rock yang sudah On-Track
+      const filteredIssues = prev.ids.issues.filter(issue => !currentlyOnTrack.includes(issue.text));
+
+      // 3. TAMBAH BARU: Masukkan issue yang Off-Track jika belum ada di daftar yang sudah disaring
+      const existingTexts = filteredIssues.map(i => i.text);
+      const newIssues = currentlyOffTrack
+        .filter(text => !existingTexts.includes(text))
+        .map(text => ({ text, checked: false }));
+
+      return { 
+        ...prev, 
+        ids: { 
+          ...prev.ids, 
+          issues: [...filteredIssues, ...newIssues] 
+        } 
+      };
     });
   };
 
@@ -304,7 +327,7 @@ function App() {
   };
 
   return (
-    <div id="pdf-content" className="max-w-7xl mx-auto p-4 md:p-8">
+    <div id="pdf-content" className="max-w-7xl mx-auto p-4 md:p-8 min-h-screen flex flex-col">
       
 {/* --- CSS KHUSUS CETAK/PDF NATIVE (OPTIMIZED & STABILIZED) --- */}
       <style>{`
@@ -662,7 +685,7 @@ function App() {
       </div>
 
       {/* FOOTER */}
-      <div data-html2canvas-ignore="true" className="flex flex-col md:flex-row items-center justify-between gap-6 mt-12 pt-4 border-t border-slate-200 pb-6 md:sticky md:bottom-0 z-40 bg-white/90 backdrop-blur-md md:-mx-8 md:px-8 md:-mb-8 md:pb-8">
+      <div data-html2canvas-ignore="true" className="flex flex-col md:flex-row items-center justify-between gap-6 mt-auto pt-4 border-t border-slate-200 pb-6 md:sticky md:bottom-0 z-40 bg-white/90 backdrop-blur-md md:-mx-8 md:px-8 md:-mb-8 md:pb-8">
         <div className="w-full md:w-auto flex justify-center md:justify-start">
           <button className="flex items-center gap-2 bg-slate-800 text-white px-6 py-3 rounded-xl font-bold hover:bg-slate-700 transition-all shadow-md active:scale-95 text-sm" onClick={generatePDF}>
             <i className="fa-solid fa-file-pdf"></i> High Quality PDF Report
