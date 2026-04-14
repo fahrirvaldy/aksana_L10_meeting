@@ -282,22 +282,45 @@ function App() {
   return (
     <div id="pdf-content" className="max-w-7xl mx-auto p-4 md:p-8">
       
-      {/* --- CSS KHUSUS CETAK/PDF NATIVE (OPTIMIZED) --- */}
+{/* --- CSS KHUSUS CETAK/PDF NATIVE (OPTIMIZED & STABILIZED) --- */}
       <style>{`
         @media print {
           @page { size: A4 landscape; margin: 12mm; }
           html, body, #root, #pdf-content { 
-            height: auto !important; overflow: visible !important; background-color: white !important; 
-            -webkit-print-color-adjust: exact; print-color-adjust: exact; 
+            height: auto !important; 
+            overflow: visible !important; 
+            background-color: white !important; 
+            -webkit-print-color-adjust: exact !important; 
+            print-color-adjust: exact !important; 
           }
-          button, [data-html2canvas-ignore="true"], .nav-controls, .action-btn { display: none !important; }
+          button, [data-html2canvas-ignore="true"], .nav-controls, .action-btn { 
+            display: none !important; 
+          }
+          
+          /* --- KUNCI PENSTABILAN BLANK PUTIH --- */
           .slide {
-            display: block !important; width: 100% !important; height: auto !important;
-            min-height: 0 !important; overflow: visible !important; position: relative !important;
-            page-break-after: always !important; break-after: page !important; padding: 0 !important; margin: 0 !important;
+            display: block !important; 
+            width: 100% !important; 
+            height: auto !important;
+            min-height: 0 !important; 
+            overflow: visible !important; 
+            position: relative !important;
+            page-break-after: always !important; 
+            break-after: page !important; 
+            padding: 0 !important; 
+            margin: 0 !important;
+            
+            /* RESET SEMUA EFEK SEMBUNYI DARI CSS REGULER */
+            opacity: 1 !important;
+            visibility: visible !important;
+            transform: none !important;
+            animation: none !important;
+            transition: none !important;
           }
+          
           table, tr, td, th, .bg-white, .rounded-xl, .card { 
-            page-break-inside: avoid !important; break-inside: avoid !important; 
+            page-break-inside: avoid !important; 
+            break-inside: avoid !important; 
           }
           * { box-shadow: none !important; }
           h1 { font-size: 24pt !important; }
