@@ -236,6 +236,30 @@ function App() {
     setData((prev) => ({ ...prev, [listKey]: [...prev[listKey], template] }));
   };
 
+  const deleteListItem = (listKey, index) => {
+    setData((prev) => {
+      const newList = [...prev[listKey]];
+      newList.splice(index, 1);
+      return { ...prev, [listKey]: newList };
+    });
+  };
+
+  const deleteHeadline = (type, index) => {
+    setData((prev) => {
+      const newHl = [...prev.headlines[type]];
+      newHl.splice(index, 1);
+      return { ...prev, headlines: { ...prev.headlines, [type]: newHl } };
+    });
+  };
+
+  const deleteIssue = (index) => {
+    setData((prev) => {
+      const newIssues = [...prev.ids.issues];
+      newIssues.splice(index, 1);
+      return { ...prev, ids: { ...prev.ids, issues: newIssues } };
+    });
+  };
+
   const addIssue = () => {
     setData(prev => ({
       ...prev,
@@ -384,9 +408,15 @@ function App() {
                       <input type="text" value={item.name} onChange={(e) => handleUpdateAttendance(item.id, 'name', e.target.value)} placeholder="Nama Divisi..." className="bg-transparent border-none focus:ring-0 p-0 text-sm font-medium w-full text-slate-700 placeholder-slate-400 outline-none" />
                     ) : (<span className="text-sm font-medium text-slate-700">{item.name}</span>)}
                   </div>
-                  {item.id > 4 && (
-                    <button onClick={() => handleDeleteAttendance(item.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-colors flex-shrink-0" title="Hapus Divisi"><i className="fa-solid fa-xmark"></i></button>
-                  )}
+                  
+                  {/* Tombol Hapus Konsisten untuk Semua Baris (Sembunyi saat Print) */}
+                  <button 
+                    onClick={() => handleDeleteAttendance(item.id)} 
+                    className="action-btn text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0" 
+                    title="Hapus Baris"
+                  >
+                    <i className="fa-solid fa-trash"></i>
+                  </button>
                 </div>
               ))}
             </div>
@@ -419,17 +449,23 @@ function App() {
                 <thead>
                   <tr>
                     <th style={{ width: '30%' }}>KPI</th><th style={{ width: '20%' }}>Target</th><th style={{ width: '20%' }}>Realisasi</th>
-                    <th style={{ width: '15%', textAlign: 'center' }}>Jenis</th><th style={{ width: '15%', textAlign: 'center' }}>Status</th>
+                    <th style={{ width: '12%', textAlign: 'center' }}>Jenis</th><th style={{ width: '12%', textAlign: 'center' }}>Status</th>
+                    <th className="action-btn" style={{ width: '6%' }}></th>
                   </tr>
                 </thead>
                 <tbody>
                   {data[sheet.key].map((item, i) => (
-                    <tr key={i}>
+                    <tr key={i} className="group">
                       <td><Editable value={item.kpi} onChange={(val) => updateListItem(sheet.key, i, 'kpi', val)} /></td>
                       <td><Editable value={item.target} onChange={(val) => updateListItem(sheet.key, i, 'target', val)} /></td>
                       <td><Editable value={item.real} onChange={(val) => updateListItem(sheet.key, i, 'real', val)} /></td>
                       <td align="center"><JenisButton jenis={item.jenis} onClick={() => updateListItem(sheet.key, i, 'jenis', item.jenis === 'outcome' ? 'output' : 'outcome')} /></td>
                       <td align="center"><StatusButton status={item.status} onClick={() => updateListItem(sheet.key, i, 'status', item.status === 'on' ? 'off' : 'on')} /></td>
+                      <td align="center" className="action-btn">
+                        <button onClick={() => deleteListItem(sheet.key, i)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
+                          <i className="fa-solid fa-trash"></i>
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -448,14 +484,19 @@ function App() {
         <div className="card" style={{ height: 'auto' }}>
           <div className="overflow-x-auto w-full">
             <table className="min-w-[600px] md:min-w-full">
-              <thead><tr><th style={{width: '15%'}}>Owner</th><th style={{width: '40%'}}>Rock</th><th align="center" style={{width: '15%'}}>Status</th><th style={{width: '30%'}}>Catatan</th></tr></thead>
+              <thead><tr><th style={{width: '15%'}}>Owner</th><th style={{width: '40%'}}>Rock</th><th align="center" style={{width: '15%'}}>Status</th><th style={{width: '25%'}}>Catatan</th><th className="action-btn" style={{ width: '5%' }}></th></tr></thead>
               <tbody>
                 {data.rockReview.map((item, i) => (
-                  <tr key={i}>
+                  <tr key={i} className="group">
                     <td>{item.owner}</td>
                     <td><Editable value={item.rock} onChange={(val) => updateListItem('rockReview', i, 'rock', val)} /></td>
                     <td align="center"><StatusButton status={item.status} onClick={() => updateListItem('rockReview', i, 'status', item.status === 'on' ? 'off' : 'on')} /></td>
                     <td><Editable value={item.note} onChange={(val) => updateListItem('rockReview', i, 'note', val)} /></td>
+                    <td align="center" className="action-btn">
+                      <button onClick={() => deleteListItem('rockReview', i)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
+                        <i className="fa-solid fa-trash"></i>
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -474,12 +515,15 @@ function App() {
             <h3 style={{ color: 'var(--accent)' }}>Customer Headlines</h3>
             <div className="mt-4">
               {data.headlines.customer.map((hl, i) => (
-                <div key={i} className="flex items-start gap-4 mb-3">
+                <div key={i} className="flex items-start gap-4 mb-3 group">
                   <span className="mt-3 font-extrabold text-slate-400 text-lg">{i + 1}.</span>
-                  <Editable className="input-box" value={hl} onChange={(val) => {
+                  <Editable className="input-box flex-grow" value={hl} onChange={(val) => {
                     const newHl = [...data.headlines.customer]; newHl[i] = val;
                     updateData('headlines', { ...data.headlines, customer: newHl });
                   }} />
+                  <button onClick={() => deleteHeadline('customer', i)} className="action-btn mt-3 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
+                    <i className="fa-solid fa-trash"></i>
+                  </button>
                 </div>
               ))}
             </div>
@@ -492,12 +536,15 @@ function App() {
             <h3 style={{ color: 'var(--success)' }}>Internal Headlines</h3>
             <div className="mt-4">
               {data.headlines.internal.map((hl, i) => (
-                <div key={i} className="flex items-start gap-4 mb-3">
+                <div key={i} className="flex items-start gap-4 mb-3 group">
                   <span className="mt-3 font-extrabold text-slate-400 text-lg">{i + 1}.</span>
-                  <Editable className="input-box" value={hl} onChange={(val) => {
+                  <Editable className="input-box flex-grow" value={hl} onChange={(val) => {
                     const newHl = [...data.headlines.internal]; newHl[i] = val;
                     updateData('headlines', { ...data.headlines, internal: newHl });
                   }} />
+                  <button onClick={() => deleteHeadline('internal', i)} className="action-btn mt-3 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
+                    <i className="fa-solid fa-trash"></i>
+                  </button>
                 </div>
               ))}
             </div>
@@ -517,7 +564,7 @@ function App() {
         <div className="card" style={{ height: 'auto' }}>
           <ol className="todo-list">
             {data.todoList.map((item, i) => (
-              <li key={i} className="todo-item flex flex-col sm:flex-row items-start sm:items-center gap-4">
+              <li key={i} className="todo-item flex flex-col sm:flex-row items-start sm:items-center gap-4 group">
                 <span className="todo-number">{i + 1}.</span>
                 <div className="todo-text-wrapper flex-grow w-full">
                   <Editable className="input-box" value={item.text} onChange={(val) => updateListItem('todoList', i, 'text', val)} />
@@ -526,8 +573,11 @@ function App() {
                     <Editable className="owner-input" value={item.owner} onChange={(val) => updateListItem('todoList', i, 'owner', val)} />
                   </div>
                 </div>
-                <div className="todo-action flex-shrink-0 self-end sm:self-center">
+                <div className="todo-action flex-shrink-0 self-end sm:self-center flex items-center gap-3">
                   <OutcomeButton outcome={item.outcome} onClick={() => updateListItem('todoList', i, 'outcome', item.outcome === 'done' ? 'not' : 'done')} />
+                  <button onClick={() => deleteListItem('todoList', i)} className="action-btn text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
+                    <i className="fa-solid fa-trash"></i>
+                  </button>
                 </div>
               </li>
             ))}
@@ -551,15 +601,18 @@ function App() {
             <h3 className="mb-4">1. Identify (Issues List)</h3>
             <div id="ids-identify-list" className="flex flex-col gap-3 pr-1">
               {data.ids.issues.map((issue, i) => (
-                <div key={i} className="ids-item flex gap-3 items-start bg-slate-50 p-3 rounded-lg">
+                <div key={i} className="ids-item flex gap-3 items-start bg-slate-50 p-3 rounded-lg group">
                   <input type="checkbox" checked={issue.checked} onChange={(e) => {
                     const newIssues = [...data.ids.issues]; newIssues[i].checked = e.target.checked;
                     updateData('ids', { ...data.ids, issues: newIssues });
                   }} className="mt-1 flex-shrink-0" />
-                  <Editable className="ids-text" value={issue.text} onChange={(val) => {
+                  <Editable className="ids-text flex-grow" value={issue.text} onChange={(val) => {
                     const newIssues = [...data.ids.issues]; newIssues[i].text = val;
                     updateData('ids', { ...data.ids, issues: newIssues });
                   }} />
+                  <button onClick={() => deleteIssue(i)} className="action-btn mt-1 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
+                    <i className="fa-solid fa-trash"></i>
+                  </button>
                 </div>
               ))}
             </div>
