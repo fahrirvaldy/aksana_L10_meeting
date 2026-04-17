@@ -511,7 +511,7 @@ function App() {
               <tbody>
                 {data.rockReview.map((item, i) => (
                   <tr key={i} className="group">
-                    <td>{item.owner}</td>
+                    <td><Editable value={item.owner} onChange={(val) => updateListItem('rockReview', i, 'owner', val)} placeholder="Input Owner..." /></td>
                     <td><Editable value={item.rock} onChange={(val) => updateListItem('rockReview', i, 'rock', val)} /></td>
                     <td align="center"><StatusButton status={item.status} onClick={() => updateListItem('rockReview', i, 'status', item.status === 'on' ? 'off' : 'on')} /></td>
                     <td><Editable value={item.note} onChange={(val) => updateListItem('rockReview', i, 'note', val)} /></td>
@@ -524,6 +524,12 @@ function App() {
                 ))}
               </tbody>
             </table>
+            <button 
+              className="add-btn mt-4" 
+              onClick={() => addRow('rockReview', { owner: '', rock: '', status: 'on', note: '' })}
+            >
+              + Tambah Rock / Prioritas Baru
+            </button>
           </div>
         </div>
       </div>
