@@ -244,24 +244,34 @@ td {
   content: 'OFF TRACK';
 }
 
-.jenis-btn.outcome {
-  background: #f3e8ff;
-  color: #6b21a8;
-  border-color: #d8b4fe;
+.jenis-btn.lagging {
+  background: #fee2e2;
+  color: #991b1b;
+  border-color: #fca5a5;
 }
 
-.jenis-btn.outcome::before {
-  content: 'OUTCOME';
+.jenis-btn.lagging::before {
+  content: 'LAGGING';
 }
 
-.jenis-btn.output {
-  background: #ffedd5;
-  color: #c2410c;
-  border-color: #fdba74;
+.jenis-btn.leading {
+  background: #dbeafe;
+  color: #1e40af;
+  border-color: #93c5fd;
 }
 
-.jenis-btn.output::before {
-  content: 'OUTPUT';
+.jenis-btn.leading::before {
+  content: 'LEADING';
+}
+
+.jenis-btn.kualitas {
+  background: #fef9c3;
+  color: #854d0e;
+  border-color: #fde047;
+}
+
+.jenis-btn.kualitas::before {
+  content: 'KUALITAS';
 }
 
 .outcome-btn.done {
