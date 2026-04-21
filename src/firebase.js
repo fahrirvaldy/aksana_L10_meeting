@@ -2,15 +2,14 @@
 import { initializeApp } from "firebase/app";
 import { initializeFirestore } from "firebase/firestore"; // Modul Database (Firestore)
 
-// TODO: TIMPA objek konfigurasi di bawah ini dengan milik Anda dari Firebase Console!
 const firebaseConfig = {
-  apiKey: "AIzaSyDT8JE21jTX-t19HBmc-HD9yHF4aVqjWS0",
-  authDomain: "l10-meeting-ammarkids.firebaseapp.com",
-  projectId: "l10-meeting-ammarkids",
-  storageBucket: "l10-meeting-ammarkids.firebasestorage.app",
-  messagingSenderId: "496500544899",
-  appId: "1:496500544899:web:4fa8d9e2fbc2bfd43112b6",
-  measurementId: "G-2S7QP7ZC1B"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 // 1. Inisialisasi Aplikasi Firebase
