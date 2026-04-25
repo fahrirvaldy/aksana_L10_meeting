@@ -1,9 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, getDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
 import './App.css';
 
-// 1. Pindahkan fungsi tanggal ke luar agar bisa dipakai di INITIAL_STATE
+// 1. Helper untuk mendapatkan ID dokumen berdasarkan tanggal (YYYY-MM-DD)
+const getDocId = (date = new Date()) => {
+  const d = new Date(date);
+  // Menggunakan locale en-CA untuk format YYYY-MM-DD yang konsisten
+  return d.toLocaleDateString('en-CA');
+};
+
 const getCurrentDate = () => {
   const today = new Date();
   const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
@@ -13,7 +19,7 @@ const getCurrentDate = () => {
 
 // --- INITIAL DATA ---
 const INITIAL_STATE = {
-  meetingDate: getCurrentDate(), // Otomatis pakai tanggal hari ini
+  meetingDate: getCurrentDate(),
   attendances: [
     { id: 1, name: 'Owner', checked: false },
     { id: 2, name: 'Integrator', checked: false },
@@ -160,35 +166,48 @@ function App() {
   const [isPaused, setIsPaused] = useState(true);
   const [cloudMsg, setCloudMsg] = useState('Menghubungkan...');
   const [cloudStatus, setCloudStatus] = useState('saving');
+  const [activeDate, setActiveDate] = useState(getDocId());
 
   // Gembok Pintar untuk Auto-Save
   const isReceivingData = useRef(true);
   const saveTimeoutRef = useRef(null);
   const gembokTimeoutRef = useRef(null);
 
+  // Interval untuk memantau pergantian hari
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const todayId = getDocId();
+      if (todayId !== activeDate) {
+        setActiveDate(todayId);
+      }
+    }, 60000); // Cek setiap menit
+    return () => clearInterval(timer);
+  }, [activeDate]);
+
   // 1. DENGARKAN PERUBAHAN DARI FIREBASE
   useEffect(() => {
-    const meetingDocRef = doc(db, 'meetings', 'currentMeeting');
+    setIsDataLoaded(false);
+    setCloudMsg('Menghubungkan...');
+    
+    const meetingDocRef = doc(db, 'meetings', activeDate);
     const unsubscribe = onSnapshot(meetingDocRef, (docSnap) => {
-      // Nyalakan gembok karena data ini dari server!
       isReceivingData.current = true;
 
       if (docSnap.exists()) {
         const serverData = docSnap.data();
         setData(serverData);
+        setIsDataLoaded(true);
       } else {
-        // Buat file pertama kali jika benar-benar kosong
-        setDoc(meetingDocRef, INITIAL_STATE);
+        // Jangan inisialisasi otomatis jika data benar-benar kosong
+        // Tunggu user mengisi atau klik "Muat Data Kemarin"
+        setData({ ...INITIAL_STATE, meetingDate: getCurrentDate() });
+        setIsDataLoaded(true);
       }
 
-      setIsDataLoaded(true);
       setCloudMsg('Terhubung & Sinkron');
       setCloudStatus('saved');
 
-      // Bersihkan timeout gembok sebelumnya jika ada
       if (gembokTimeoutRef.current) clearTimeout(gembokTimeoutRef.current);
-
-      // Buka gembok setelah 500 milidetik (Masa Tenggang)
       gembokTimeoutRef.current = setTimeout(() => {
         isReceivingData.current = false;
       }, 500);
@@ -198,23 +217,20 @@ function App() {
       unsubscribe();
       if (gembokTimeoutRef.current) clearTimeout(gembokTimeoutRef.current);
     };
-  }, []);
+  }, [activeDate]);
 
   // 2. SISTEM AUTO-SAVE PINTAR (Debounced)
   useEffect(() => {
-    // Jangan simpan kalau aplikasi baru dimuat atau sedang menerima data dari server
     if (!isDataLoaded || isReceivingData.current) return;
 
     setCloudMsg('Mengetik...');
     setCloudStatus('saving');
 
-    // Hapus jadwal simpan sebelumnya jika user mengetik lagi dengan cepat
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
-    // Jadwalkan penyimpanan baru setelah user diam selama 1.5 detik
     saveTimeoutRef.current = setTimeout(async () => {
       try {
-        const meetingDocRef = doc(db, 'meetings', 'currentMeeting');
+        const meetingDocRef = doc(db, 'meetings', activeDate);
         await setDoc(meetingDocRef, data, { merge: true });
         setCloudMsg('Tersimpan di Cloud');
         setCloudStatus('saved');
@@ -225,9 +241,51 @@ function App() {
     }, 1500);
 
     return () => clearTimeout(saveTimeoutRef.current);
-  }, [data, isDataLoaded]);
+  }, [data, isDataLoaded, activeDate]);
 
-  // --- ACTIONS PURE STATE (Sangat Cepat & Ringan) ---
+  // Muat Data Rapat Terakhir (Paling Dekat Sebelum Hari Ini)
+  const loadYesterdayData = async () => {
+    try {
+      setCloudMsg('Mencari data terakhir...');
+      
+      // Query mencari 1 dokumen yang ID-nya < activeDate, diurutkan paling baru
+      const meetingsRef = collection(db, 'meetings');
+      const q = query(
+        meetingsRef, 
+        where('__name__', '<', activeDate), 
+        orderBy('__name__', 'desc'), 
+        limit(1)
+      );
+      
+      const querySnapshot = await getDocs(q);
+      
+      if (!querySnapshot.empty) {
+        const lastDoc = querySnapshot.docs[0];
+        const lastData = lastDoc.data();
+        
+        // Reset beberapa field untuk rapat hari ini
+        const newData = {
+          ...lastData,
+          meetingDate: getCurrentDate(),
+          ratings: {},
+          goodNews: { owner: '', integrator: '', team: '' },
+        };
+        
+        setData(newData);
+        setCloudMsg(`Data ${lastDoc.id} dimuat`);
+        setCloudStatus('saved');
+      } else {
+        alert('Tidak ada data rapat sebelumnya ditemukan.');
+        setCloudMsg('Data tak ditemukan');
+      }
+    } catch (error) {
+      console.error(error);
+      setCloudMsg('Gagal memuat');
+      setCloudStatus('error');
+    }
+  };
+
+  // --- ACTIONS PURE STATE ---
   const handleAddAttendance = () => {
     setData(prev => {
       const newId = prev.attendances.length > 0 ? Math.max(...prev.attendances.map(a => a.id)) + 1 : 1;
@@ -334,7 +392,6 @@ function App() {
     const currentlyOffTrack = [];
     const currentlyOnTrack = [];
 
-    // 1. Pindai semua tabel untuk mendata mana yang Off-Track dan On-Track
     ['marketingKPI', 'creativeKPI', 'rndKPI', 'ppicKPI', 'financeKPI', 'gudangKPI', 'rockReview'].forEach(key => {
       if (data[key]) {
         data[key].forEach(item => {
@@ -351,10 +408,7 @@ function App() {
     });
 
     setData(prev => {
-      // 2. SAPU BERSIH: Hapus issue di daftar IDS jika teksnya sama persis dengan KPI/Rock yang sudah On-Track
       const filteredIssues = prev.ids.issues.filter(issue => !currentlyOnTrack.includes(issue.text));
-
-      // 3. TAMBAH BARU: Masukkan issue yang Off-Track jika belum ada di daftar yang sudah disaring
       const existingTexts = filteredIssues.map(i => i.text);
       const newIssues = currentlyOffTrack
         .filter(item => !existingTexts.includes(item.text))
@@ -402,7 +456,6 @@ function App() {
 
   return (
     <main id="pdf-content" className="flex flex-col min-h-screen max-w-7xl mx-auto p-4 md:p-8">
-      {/* --- CSS KHUSUS CETAK/PDF NATIVE (OPTIMIZED & STABILIZED) --- */}
       <style>{`
         @media print {
           @page { size: A4 landscape; margin: 12mm; }
@@ -416,8 +469,6 @@ function App() {
           button, [data-html2canvas-ignore="true"], .nav-controls, .action-btn { 
             display: none !important; 
           }
-          
-          /* --- KUNCI PENSTABILAN BLANK PUTIH --- */
           .slide {
             display: block !important; 
             width: 100% !important; 
@@ -429,15 +480,12 @@ function App() {
             break-after: page !important; 
             padding: 0 !important; 
             margin: 0 !important;
-            
-            /* RESET SEMUA EFEK SEMBUNYI DARI CSS REGULER */
             opacity: 1 !important;
             visibility: visible !important;
             transform: none !important;
             animation: none !important;
             transition: none !important;
           }
-          
           table, tr, td, th, .bg-white, .rounded-xl, .card { 
             page-break-inside: avoid !important; 
             break-inside: avoid !important; 
@@ -484,7 +532,7 @@ function App() {
 
       {/* --- SLIDE 0: TITLE PAGE --- */}
       <section className={`slide ${currentSlide === 0 ? 'active' : ''}`}>
-        <div className="card flex justify-center items-center text-center border-none bg-transparent shadow-none">
+        <div className="card flex flex-col justify-center items-center text-center border-none bg-transparent shadow-none">
           <div className="bg-white px-[60px] py-[40px] rounded-[24px] shadow-[0_20px_50px_rgba(0,0,0,0.05)] border border-[#e2e8f0]">
             <div className="flex justify-center items-center gap-[10px] mb-[15px]">
               <div className="text-[14px] text-[var(--text-light)] uppercase tracking-[2px] font-bold">Tanggal Rapat</div>
@@ -497,6 +545,14 @@ function App() {
               </button>
             </div>
             <div className="text-3xl font-extrabold text-aksana-primary md:text-5xl">{data.meetingDate}</div>
+            
+            {/* Tombol Muat Data Kemarin */}
+            <button
+              onClick={loadYesterdayData}
+              className="mt-8 px-6 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-aksana-accent hover:text-white transition-all active:scale-95"
+            >
+              <i className="fa-solid fa-history mr-2"></i> Muat Data Kemarin
+            </button>
           </div>
         </div>
       </section>
@@ -528,7 +584,6 @@ function App() {
                       className="w-full p-0 border-none text-sm font-medium text-slate-700 placeholder-slate-400 outline-none bg-transparent focus:ring-0"
                     />
                   </div>
-                  {/* Tombol Hapus Konsisten untuk Semua Baris (Sembunyi saat Print) */}
                   <button
                     onClick={() => handleDeleteAttendance(item.id)}
                     className="action-btn flex-shrink-0 text-slate-300 hover:text-red-500 opacity-0 transition-all group-hover:opacity-100"
@@ -566,7 +621,7 @@ function App() {
         </div>
       </section>
 
-      {/* KPI SLIDES TEMPLATE */}
+      {/* KPI SLIDES */}
       {[
         { title: 'Marketing', key: 'marketingKPI' },
         { title: 'Creative', key: 'creativeKPI' },
@@ -576,7 +631,6 @@ function App() {
         { title: 'Gudang', key: 'gudangKPI' },
       ].map((kpiCategory, index) => (
         <React.Fragment key={kpiCategory.key}>
-          {/* --- SLIDE {index + 2}: SCORECARD {kpiCategory.title.toUpperCase()} --- */}
           <section className={`slide ${currentSlide === (index + 2) ? 'active' : ''}`}>
             <div className="flex flex-col gap-1 mb-4">
               <h1 className="flex items-center gap-2">
