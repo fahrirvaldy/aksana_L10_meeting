@@ -443,7 +443,8 @@ function App() {
 
   // --- LOGIC CALCULATIONS ---
   const ratingValues = Object.values(data.ratings).map(v => parseFloat(v)).filter(v => !isNaN(v));
-  const averageRating = ratingValues.length ? (ratingValues.reduce((a, b) => a + b, 0) / ratingValues.length).toFixed(1) : '0.0';
+  const averageRaw = ratingValues.length ? (ratingValues.reduce((a, b) => a + b, 0) / ratingValues.length) : 0;
+  const averageRating = averageRaw === 0 ? 0 : parseFloat(averageRaw.toFixed(1));
 
   // --- TIMER LOGIC ---
   useEffect(() => {
