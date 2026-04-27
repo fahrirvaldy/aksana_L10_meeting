@@ -442,9 +442,17 @@ function App() {
   };
 
   // --- LOGIC CALCULATIONS ---
-  const ratingValues = Object.values(data.ratings).map(v => parseFloat(v)).filter(v => !isNaN(v));
-  const averageRaw = ratingValues.length ? (ratingValues.reduce((a, b) => a + b, 0) / ratingValues.length) : 0;
-  const averageRating = averageRaw === 0 ? 0 : parseFloat(averageRaw.toFixed(1));
+  const getRelevantRatings = () => {
+    return data.attendances
+      .map(a => parseFloat(data.ratings['rating_id_' + a.id]))
+      .filter(v => !isNaN(v) && v > 0);
+  };
+
+  const relevantRatings = getRelevantRatings();
+  const averageRaw = relevantRatings.length 
+    ? (relevantRatings.reduce((a, b) => a + b, 0) / relevantRatings.length) 
+    : 0;
+  const averageRating = parseFloat(averageRaw.toFixed(1));
 
   // --- TIMER LOGIC ---
   useEffect(() => {
