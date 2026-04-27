@@ -202,15 +202,20 @@ function App() {
         // Tunggu user mengisi atau klik "Muat Data Kemarin"
         setData({ ...INITIAL_STATE, meetingDate: getCurrentDate() });
         setIsDataLoaded(true);
+        // Paksa gembok terbuka agar user bisa langsung menyimpan data baru
+        isReceivingData.current = false;
       }
 
       setCloudMsg('Terhubung & Sinkron');
       setCloudStatus('saved');
 
-      if (gembokTimeoutRef.current) clearTimeout(gembokTimeoutRef.current);
-      gembokTimeoutRef.current = setTimeout(() => {
-        isReceivingData.current = false;
-      }, 500);
+      // Jika data ada, beri jeda sedikit sebelum membuka gembok
+      if (docSnap.exists()) {
+        if (gembokTimeoutRef.current) clearTimeout(gembokTimeoutRef.current);
+        gembokTimeoutRef.current = setTimeout(() => {
+          isReceivingData.current = false;
+        }, 500);
+      }
     });
 
     return () => {
@@ -230,6 +235,7 @@ function App() {
 
     saveTimeoutRef.current = setTimeout(async () => {
       try {
+        console.log('Mencoba menyimpan ke:', activeDate);
         const meetingDocRef = doc(db, 'meetings', activeDate);
         await setDoc(meetingDocRef, data, { merge: true });
         setCloudMsg('Tersimpan di Cloud');
@@ -238,7 +244,7 @@ function App() {
         setCloudMsg('Gagal Menyimpan');
         setCloudStatus('error');
       }
-    }, 1500);
+    }, 800);
 
     return () => clearTimeout(saveTimeoutRef.current);
   }, [data, isDataLoaded, activeDate]);
@@ -960,7 +966,13 @@ function App() {
             <i className="fa-solid fa-file-pdf"></i> High Quality PDF Report
           </button>
         </div>
-        <div className={`flex items-center justify-center gap-2 px-4 py-2 rounded-full border text-sm font-medium bg-white shadow-sm ${cloudStatus === 'error' ? 'text-red-500 border-red-100' : 'text-aksana-primary border-slate-100'}`}>
+        <div className={`flex items-center justify-center gap-3 px-6 py-2 rounded-full border text-sm font-bold shadow-sm transition-all duration-300 ${
+          cloudStatus === 'saving' 
+            ? 'bg-blue-50 border-blue-200 text-blue-600 animate-pulse scale-105' 
+            : cloudStatus === 'error' 
+              ? 'bg-red-50 border-red-100 text-red-500' 
+              : 'bg-white border-slate-100 text-aksana-primary'
+        }`}>
           <i className={`fa-solid ${cloudStatus === 'saving' ? 'fa-spinner fa-spin' : 'fa-cloud'}`}></i>
           <span>{cloudMsg}</span>
         </div>
