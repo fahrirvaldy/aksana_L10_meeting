@@ -172,87 +172,12 @@ function App() {
   const isReceivingData = useRef(true);
   const saveTimeoutRef = useRef(null);
   const gembokTimeoutRef = useRef(null);
-
-  // Interval untuk memantau pergantian hari
-  useEffect(() => {
-    const timer = setInterval(() => {
-      const todayId = getDocId();
-      if (todayId !== activeDate) {
-        setActiveDate(todayId);
-      }
-    }, 60000); // Cek setiap menit
-    return () => clearInterval(timer);
-  }, [activeDate]);
-
-  // 1. DENGARKAN PERUBAHAN DARI FIREBASE
-  useEffect(() => {
-    setIsDataLoaded(false);
-    setCloudMsg('Menghubungkan...');
-    
-    const meetingDocRef = doc(db, 'meetings', activeDate);
-    const unsubscribe = onSnapshot(meetingDocRef, (docSnap) => {
-      isReceivingData.current = true;
-
-      if (docSnap.exists()) {
-        const serverData = docSnap.data();
-        setData(serverData);
-        setIsDataLoaded(true);
-      } else {
-        // Jangan inisialisasi otomatis jika data benar-benar kosong
-        // Tunggu user mengisi atau klik "Muat Data Kemarin"
-        setData({ ...INITIAL_STATE, meetingDate: getCurrentDate() });
-        setIsDataLoaded(true);
-        // Paksa gembok terbuka agar user bisa langsung menyimpan data baru
-        isReceivingData.current = false;
-      }
-
-      setCloudMsg('Terhubung & Sinkron');
-      setCloudStatus('saved');
-
-      // Jika data ada, beri jeda sedikit sebelum membuka gembok
-      if (docSnap.exists()) {
-        if (gembokTimeoutRef.current) clearTimeout(gembokTimeoutRef.current);
-        gembokTimeoutRef.current = setTimeout(() => {
-          isReceivingData.current = false;
-        }, 500);
-      }
-    });
-
-    return () => {
-      unsubscribe();
-      if (gembokTimeoutRef.current) clearTimeout(gembokTimeoutRef.current);
-    };
-  }, [activeDate]);
-
-  // 2. SISTEM AUTO-SAVE PINTAR (Debounced)
-  useEffect(() => {
-    if (!isDataLoaded || isReceivingData.current) return;
-
-    setCloudMsg('Mengetik...');
-    setCloudStatus('saving');
-
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-
-    saveTimeoutRef.current = setTimeout(async () => {
-      try {
-        console.log('Mencoba menyimpan ke:', activeDate);
-        const meetingDocRef = doc(db, 'meetings', activeDate);
-        await setDoc(meetingDocRef, data, { merge: true });
-        setCloudMsg('Tersimpan di Cloud');
-        setCloudStatus('saved');
-      } catch (error) {
-        setCloudMsg('Gagal Menyimpan');
-        setCloudStatus('error');
-      }
-    }, 800);
-
-    return () => clearTimeout(saveTimeoutRef.current);
-  }, [data, isDataLoaded, activeDate]);
+  const autoLoadTriedRef = useRef(null);
 
   // Muat Data Rapat Terakhir (Paling Dekat Sebelum Hari Ini)
   const loadYesterdayData = async () => {
     try {
-      setCloudMsg('Mencari data terakhir...');
+      setCloudMsg('Menyiapkan Template Rapat...');
       
       // Query mencari 1 dokumen yang ID-nya < activeDate, diurutkan paling baru
       const meetingsRef = collection(db, 'meetings');
@@ -288,8 +213,96 @@ function App() {
       console.error(error);
       setCloudMsg('Gagal memuat');
       setCloudStatus('error');
+    } finally {
+      setIsDataLoaded(true);
+      isReceivingData.current = false;
     }
   };
+
+  // Interval untuk memantau pergantian hari
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const todayId = getDocId();
+      if (todayId !== activeDate) {
+        setActiveDate(todayId);
+      }
+    }, 60000); // Cek setiap menit
+    return () => clearInterval(timer);
+  }, [activeDate]);
+
+  // 1. DENGARKAN PERUBAHAN DARI FIREBASE
+  useEffect(() => {
+    setIsDataLoaded(false);
+    setCloudMsg('Menghubungkan...');
+    
+    const meetingDocRef = doc(db, 'meetings', activeDate);
+    const unsubscribe = onSnapshot(meetingDocRef, (docSnap) => {
+      isReceivingData.current = true;
+
+      if (docSnap.exists()) {
+        const serverData = docSnap.data();
+        setData(serverData);
+        setIsDataLoaded(true);
+        setCloudMsg('Terhubung & Sinkron');
+        setCloudStatus('saved');
+      } else {
+        // Jika dokumen hari ini tidak ada, panggil loadYesterdayData otomatis (hanya sekali)
+        if (autoLoadTriedRef.current !== activeDate) {
+          autoLoadTriedRef.current = activeDate;
+          setCloudMsg('Menyiapkan Template Rapat...');
+          loadYesterdayData();
+        } else {
+          setData({ ...INITIAL_STATE, meetingDate: getCurrentDate() });
+          setIsDataLoaded(true);
+          isReceivingData.current = false;
+          setCloudMsg('Terhubung & Sinkron');
+          setCloudStatus('saved');
+        }
+      }
+
+      // Jika data ada, beri jeda sedikit sebelum membuka gembok
+      if (docSnap.exists()) {
+        if (gembokTimeoutRef.current) clearTimeout(gembokTimeoutRef.current);
+        gembokTimeoutRef.current = setTimeout(() => {
+          isReceivingData.current = false;
+        }, 500);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      if (gembokTimeoutRef.current) clearTimeout(gembokTimeoutRef.current);
+    };
+  }, [activeDate]);
+
+  // 2. SISTEM AUTO-SAVE PINTAR (Debounced)
+  useEffect(() => {
+    if (!isDataLoaded || isReceivingData.current) return;
+
+    setCloudMsg('Mengetik...');
+    setCloudStatus('saving');
+
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+
+    saveTimeoutRef.current = setTimeout(() => {
+      console.log('Mencoba menyimpan ke:', activeDate);
+      const meetingDocRef = doc(db, 'meetings', activeDate);
+      
+      // Kirim data secara asinkron tanpa 'await' untuk mencegah blocking UI
+      setDoc(meetingDocRef, data, { merge: true })
+        .then(() => {
+          setCloudMsg('Tersimpan di Cloud');
+          setCloudStatus('saved');
+        })
+        .catch((error) => {
+          console.error("Save error:", error);
+          setCloudMsg('Gagal Menyimpan');
+          setCloudStatus('error');
+        });
+    }, 1000); // Sedikit menambah delay debounce agar tidak terlalu sering hit Firestore
+
+    return () => clearTimeout(saveTimeoutRef.current);
+  }, [data, isDataLoaded, activeDate]);
 
   // --- ACTIONS PURE STATE ---
   const handleAddAttendance = () => {
