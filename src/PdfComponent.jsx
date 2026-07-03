@@ -10,7 +10,7 @@ const processText = (text) => {
 
 // Helper function to render KPI tables
 const renderKpiTable = (title, kpiData) => (
-  <div className="page-break">
+  <div>
     <h3>{title}</h3>
     <table className="data-table fixed-layout">
       <thead>
@@ -24,7 +24,7 @@ const renderKpiTable = (title, kpiData) => (
       </thead>
       <tbody>
         {(kpiData || []).map((item, index) => (
-          <tr key={index}>
+          <tr key={index} style={{ pageBreakInside: 'avoid' }}>
             <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{processText(item.kpi)}</td>
             <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{processText(item.target)}</td>
             <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{processText(item.real)}</td>
@@ -90,20 +90,23 @@ const PdfComponent = React.forwardRef(({ data }, ref) => {
       <div className="pdf-page page-break">
         <h2>Scorecard Review</h2>
         {renderKpiTable(data?.scorecardTitles?.marketingKPI, data?.marketingKPI)}
+      </div>
+      <div className="pdf-page page-break print:break-before-page">
         {renderKpiTable(data?.scorecardTitles?.creativeKPI, data?.creativeKPI)}
       </div>
-
-      <div className="pdf-page page-break">
+      <div className="pdf-page page-break print:break-before-page">
         {renderKpiTable(data?.scorecardTitles?.rndKPI, data?.rndKPI)}
+      </div>
+      <div className="pdf-page page-break print:break-before-page">
         {renderKpiTable(data?.scorecardTitles?.ppicKPI, data?.ppicKPI)}
       </div>
-      
-      <div className="pdf-page page-break">
+      <div className="pdf-page page-break print:break-before-page">
         {renderKpiTable(data?.scorecardTitles?.financeKPI, data?.financeKPI)}
+      </div>
+      <div className="pdf-page page-break print:break-before-page">
         {renderKpiTable(data?.scorecardTitles?.gudangKPI, data?.gudangKPI)}
       </div>
-      
-      <div className="pdf-page page-break">
+      <div className="pdf-page page-break print:break-before-page">
         {renderKpiTable(data?.scorecardTitles?.operasionalKPI, data?.operasionalKPI)}
       </div>
 
@@ -121,7 +124,7 @@ const PdfComponent = React.forwardRef(({ data }, ref) => {
           </thead>
           <tbody>
             {(data?.rockReview || []).map((item, i) => (
-              <tr key={i}>
+              <tr key={i} style={{ pageBreakInside: 'avoid' }}>
                 <td style={{ wordWrap: 'break-word' }}>{processText(item.owner)}</td>
                 <td style={{ wordWrap: 'break-word' }}>{processText(item.rock)}</td>
                 <td className={item.status === 'on' ? 'status-on' : 'status-off'}>
@@ -162,7 +165,7 @@ const PdfComponent = React.forwardRef(({ data }, ref) => {
           </thead>
           <tbody>
             {(data?.todoList || []).map((item, i) => (
-              <tr key={i}>
+              <tr key={i} style={{ pageBreakInside: 'avoid' }}>
                 <td style={{ wordWrap: 'break-word' }}>{processText(item.text)}</td>
                 <td style={{ wordWrap: 'break-word' }}>{processText(item.owner)}</td>
                 <td>{item.outcome === 'done' ? 'Tercapai' : 'Belum'}</td>
@@ -183,7 +186,7 @@ const PdfComponent = React.forwardRef(({ data }, ref) => {
                   .filter((issue, index, self) => 
                     index === self.findIndex(t => processText(t.text) === processText(issue.text))
                   )
-                  .map((issue, i) => <li key={i}>{processText(issue.text)}</li>)
+                  .map((issue, i) => <li key={i} style={{ pageBreakInside: 'avoid' }}>{processText(issue.text)}</li>)
                 }
               </ul>
             </div>
