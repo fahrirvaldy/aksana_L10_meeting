@@ -558,3 +558,176 @@ ol.todo-list {
     }
     .rating-avg { font-size: 48px !important; margin-top: 20px !important; }
 }
+
+/* Utility class to hide elements visually but keep them in the DOM for scripts */
+.fixed-layout {
+  table-layout: fixed;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  height: 1px;
+  width: 1px;
+  overflow: hidden;
+  clip: rect(1px, 1px, 1px, 1px);
+  white-space: nowrap; /* prevent wrapping */
+}
+
+/* ======================================================================== */
+/* == STYLING KHUSUS UNTUK EKSPOR PDF (@media print) == */
+/* ======================================================================== */
+@media print {
+  /* -- 1. Tata Letak dan Tipografi -- */
+  @page {
+    size: A4; /* Ukuran halaman standar A4 */
+    margin: 20mm; /* Margin 20mm di semua sisi */
+  }
+
+  body {
+    font-family: 'Inter', 'Arial', sans-serif; /* Font bersih dan modern */
+    background-color: #ffffff; /* Latar belakang putih */
+    color: #000000; /* Teks hitam untuk kontras tinggi */
+  }
+
+  /* Hierarki Visual Font */
+  .pdf-container h1 {
+    font-size: 24pt;
+    font-weight: bold;
+    margin-bottom: 20px;
+  }
+
+  .pdf-container h2 {
+    font-size: 18pt;
+    font-weight: bold;
+    margin-top: 25px;
+    margin-bottom: 15px;
+  }
+  
+  .pdf-container h3 {
+    font-size: 14pt;
+    font-weight: bold;
+    margin-top: 20px;
+    margin-bottom: 10px;
+  }
+
+  .pdf-container p, .pdf-container li {
+    font-size: 12pt;
+    line-height: 1.5;
+  }
+
+  /* -- 2. Kebersihan Konten -- */
+  /* Sembunyikan semua elemen di body KECUALI container PDF kita */
+  body * {
+    visibility: hidden;
+  }
+
+  .pdf-container, .pdf-container * {
+    visibility: visible;
+  }
+
+  /* Posisikan container PDF di pojok kiri atas halaman */
+  .pdf-container {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+
+  /* -- 3. Kontrol Halaman -- */
+  
+  /* Pastikan elemen penting tidak terpotong antar halaman */
+  .pdf-container table, .pdf-container img, .pdf-container ul, .pdf-container h2, .pdf-container h3 {
+    page-break-inside: avoid;
+  }
+
+  /* Header yang berulang di setiap halaman */
+  .pdf-header {
+    position: fixed;
+    top: 0;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 10px;
+  }
+  
+  .pdf-header .logo {
+      height: 30px; /* Ukuran disesuaikan untuk header */
+      padding: 0;
+      margin-right: 15px;
+  }
+
+  .pdf-header h1 {
+      font-size: 16pt; /* Ukuran disesuaikan untuk header */
+      margin: 0;
+  }
+
+
+  /* Footer dengan penomoran halaman */
+  .pdf-footer {
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    text-align: center;
+    font-size: 10pt;
+    color: #555;
+    border-top: 1px solid #ddd;
+    padding-top: 10px;
+  }
+
+  /* Counter untuk penomoran halaman */
+  body {
+    counter-reset: page;
+  }
+  
+  .pdf-footer::after {
+    counter-increment: page;
+    content: "Halaman " counter(page);
+    /* Catatan: CSS tidak bisa secara native membuat format "Halaman X dari Y". 
+       Ini adalah batasan teknis dari CSS. Penomoran "Halaman X" sudah sangat baik. */
+  }
+
+  /* Body content harus diberi padding atas/bawah agar tidak tumpang tindih dengan header/footer */
+  .pdf-body {
+    padding-top: 60px; /* Ruang untuk header */
+    padding-bottom: 40px; /* Ruang untuk footer */
+  }
+
+
+  /* -- 4. Optimalisasi Elemen Visual -- */
+  .pdf-container img {
+    max-width: 100%;
+    height: auto;
+  }
+  
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+  }
+
+  .data-table th, .data-table td {
+    border: 1px solid #ccc;
+    padding: 8px 12px;
+    text-align: left;
+  }
+
+  .data-table thead {
+    display: table-header-group; /* Judul tabel akan berulang di setiap halaman baru */
+    background-color: #f0f0f0;
+    font-weight: bold;
+  }
+
+  /* -- 5. Fungsionalitas & Aksesibilitas -- */
+  a {
+    color: #0066cc;
+    text-decoration: none;
+  }
+  
+  /* Saat dicetak, tampilkan URL lengkap di sebelah link */
+  a[href^="http"]::after {
+    content: " (" attr(href) ")";
+    font-size: 9pt;
+    color: #333;
+  }
+}

@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useReactToPrint } from 'react-to-print';
+import PdfComponent from './PdfComponent';
 import { doc, onSnapshot, setDoc, getDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
 import './App.css';
@@ -167,6 +169,7 @@ function App() {
   const [cloudMsg, setCloudMsg] = useState('Menghubungkan...');
   const [cloudStatus, setCloudStatus] = useState('saving');
   const [activeDate, setActiveDate] = useState(getDocId());
+  const componentRef = useRef();
 
   // Gembok Pintar untuk Auto-Save
   const isReceivingData = useRef(true);
@@ -450,10 +453,6 @@ function App() {
     if (currentSlide > 0) setCurrentSlide(currentSlide - 1);
   };
 
-  const generatePDF = () => {
-    window.print();
-  };
-
   // --- LOGIC CALCULATIONS ---
   const getRelevantRatings = () => {
     return data.attendances
@@ -482,8 +481,14 @@ function App() {
     return `${m}:${s}`;
   };
 
+  const handlePrint = useReactToPrint({
+    contentRef: componentRef,
+    documentTitle: `L10-Meeting-${activeDate}`,
+  });
+
   return (
     <main id="pdf-content" className="flex flex-col min-h-screen max-w-7xl mx-auto p-4 md:p-8">
+      <div className="visually-hidden"><PdfComponent ref={componentRef} data={data} /></div>
       <style>{`
         @media print {
           @page { size: A4 landscape; margin: 12mm; }
@@ -514,7 +519,7 @@ function App() {
             animation: none !important;
             transition: none !important;
           }
-          table, tr, td, th, .bg-white, .rounded-xl, .card { 
+          table, tr, td, th, .bg-white, .rounded-xl, .card, li { 
             page-break-inside: avoid !important; 
             break-inside: avoid !important; 
           }
@@ -981,9 +986,9 @@ function App() {
       {/* FOOTER */}
       <footer data-html2canvas-ignore="true" className="sticky bottom-0 z-40 flex flex-col md:flex-row items-center justify-between gap-6 mt-auto pt-4 border-t md:-mx-8 md:px-8 md:-mb-8 md:pb-8 border-slate-200 bg-white/90 backdrop-blur-md">
         <div className="flex justify-center md:justify-start w-full md:w-auto">
-          <button
+            <button
             className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold text-white bg-slate-800 transition-all shadow-md active:scale-95 hover:bg-slate-700"
-            onClick={generatePDF}
+            onClick={handlePrint}
           >
             <i className="fa-solid fa-file-pdf"></i> High Quality PDF Report
           </button>
