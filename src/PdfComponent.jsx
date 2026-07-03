@@ -4,13 +4,13 @@ import React from 'react';
 const processText = (text) => {
   if (typeof text !== 'string') return '';
   // Clean up excessive newlines and trim whitespace
-  return text.replace(/\n+/g, ' ').trim();
+  return text.replace(/\s+/g, ' ').trim();
 };
 
 
 // Helper function to render KPI tables
 const renderKpiTable = (title, kpiData) => (
-  <div>
+  <div className='print:break-inside-avoid' style={{ breakInside: 'avoid', pageBreakInside: 'avoid', display: 'block', marginBottom: '2rem' }}>
     <h3>{title}</h3>
     <table className="data-table fixed-layout">
       <thead>
@@ -23,17 +23,22 @@ const renderKpiTable = (title, kpiData) => (
         </tr>
       </thead>
       <tbody>
-        {(kpiData || []).map((item, index) => (
-          <tr key={index} style={{ pageBreakInside: 'avoid' }}>
-            <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{processText(item.kpi)}</td>
-            <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{processText(item.target)}</td>
-            <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{processText(item.real)}</td>
-            <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{processText(item.jenis)}</td>
-            <td className={item.status === 'on' ? 'status-on' : 'status-off'}>
-              {item.status === 'on' ? 'ON' : 'OFF'}
-            </td>
-          </tr>
-        ))}
+        {(kpiData || []).map((item, index) => {
+          if (!item.kpi) {
+            return null;
+          }
+          return (
+            <tr key={index} style={{ pageBreakInside: 'avoid' }}>
+              <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{processText(item.kpi)}</td>
+              <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{processText(item.target)}</td>
+              <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{processText(item.real)}</td>
+              <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{processText(item.jenis)}</td>
+              <td className={item.status === 'on' ? 'status-on' : 'status-off'}>
+                {item.status === 'on' ? 'ON' : 'OFF'}
+              </td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   </div>
@@ -87,26 +92,14 @@ const PdfComponent = React.forwardRef(({ data }, ref) => {
       </div>
       
       {/* KPI Slides */}
-      <div className="pdf-page page-break">
+      <div className='w-full h-auto bg-white print:bg-transparent'>
         <h2>Scorecard Review</h2>
         {renderKpiTable(data?.scorecardTitles?.marketingKPI, data?.marketingKPI)}
-      </div>
-      <div className="pdf-page page-break print:break-before-page">
         {renderKpiTable(data?.scorecardTitles?.creativeKPI, data?.creativeKPI)}
-      </div>
-      <div className="pdf-page page-break print:break-before-page">
         {renderKpiTable(data?.scorecardTitles?.rndKPI, data?.rndKPI)}
-      </div>
-      <div className="pdf-page page-break print:break-before-page">
         {renderKpiTable(data?.scorecardTitles?.ppicKPI, data?.ppicKPI)}
-      </div>
-      <div className="pdf-page page-break print:break-before-page">
         {renderKpiTable(data?.scorecardTitles?.financeKPI, data?.financeKPI)}
-      </div>
-      <div className="pdf-page page-break print:break-before-page">
         {renderKpiTable(data?.scorecardTitles?.gudangKPI, data?.gudangKPI)}
-      </div>
-      <div className="pdf-page page-break print:break-before-page">
         {renderKpiTable(data?.scorecardTitles?.operasionalKPI, data?.operasionalKPI)}
       </div>
 
@@ -123,16 +116,21 @@ const PdfComponent = React.forwardRef(({ data }, ref) => {
             </tr>
           </thead>
           <tbody>
-            {(data?.rockReview || []).map((item, i) => (
-              <tr key={i} style={{ pageBreakInside: 'avoid' }}>
-                <td style={{ wordWrap: 'break-word' }}>{processText(item.owner)}</td>
-                <td style={{ wordWrap: 'break-word' }}>{processText(item.rock)}</td>
-                <td className={item.status === 'on' ? 'status-on' : 'status-off'}>
-                  {item.status === 'on' ? 'ON' : 'OFF'}
-                </td>
-                <td style={{ wordWrap: 'break-word' }}>{processText(item.note)}</td>
-              </tr>
-            ))}
+            {(data?.rockReview || []).map((item, i) => {
+              if (!item.rock || !item.owner) {
+                return null;
+              }
+              return (
+                <tr key={i} style={{ pageBreakInside: 'avoid' }}>
+                  <td style={{ wordWrap: 'break-word' }}>{processText(item.owner)}</td>
+                  <td style={{ wordWrap: 'break-word' }}>{processText(item.rock)}</td>
+                  <td className={item.status === 'on' ? 'status-on' : 'status-off'}>
+                    {item.status === 'on' ? 'ON' : 'OFF'}
+                  </td>
+                  <td style={{ wordWrap: 'break-word' }}>{processText(item.note)}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -164,13 +162,18 @@ const PdfComponent = React.forwardRef(({ data }, ref) => {
             </tr>
           </thead>
           <tbody>
-            {(data?.todoList || []).map((item, i) => (
-              <tr key={i} style={{ pageBreakInside: 'avoid' }}>
-                <td style={{ wordWrap: 'break-word' }}>{processText(item.text)}</td>
-                <td style={{ wordWrap: 'break-word' }}>{processText(item.owner)}</td>
-                <td>{item.outcome === 'done' ? 'Tercapai' : 'Belum'}</td>
-              </tr>
-            ))}
+            {(data?.todoList || []).map((item, i) => {
+              if (!item.text || !item.owner) {
+                return null;
+              }
+              return (
+                <tr key={i} style={{ pageBreakInside: 'avoid' }}>
+                  <td style={{ wordWrap: 'break-word' }}>{processText(item.text)}</td>
+                  <td style={{ wordWrap: 'break-word' }}>{processText(item.owner)}</td>
+                  <td>{item.outcome === 'done' ? 'Tercapai' : 'Belum'}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
