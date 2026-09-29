@@ -35,8 +35,7 @@ const INITIAL_STATE = {
     rndKPI: 'Research & Development',
     ppicKPI: 'PPIC',
     financeKPI: 'Finance',
-    gudangKPI: 'Gudang',
-    kreatifKPI: 'Kreatif'
+    gudangKPI: 'Gudang'
   },
   marketingKPI: [
     { kpi: 'Omzet Total', target: 'Rp 273,751,236', real: '', jenis: 'lagging', status: 'on' },
@@ -83,12 +82,6 @@ const INITIAL_STATE = {
   gudangKPI: [
     { kpi: 'Jumlah Pesanan Diproses', target: '100 Diproses', real: '', jenis: 'leading', status: 'on' },
     { kpi: 'Pengiriman Tepat Waktu', target: '>95% Tepat Waktu', real: '', jenis: 'lagging', status: 'on' },
-    { kpi: 'Ketepatan Stok Barang', target: '>97% Sesuai', real: '', jenis: 'lagging', status: 'on' },
-    { kpi: 'Laporan Harian Retur, Gagal, Cancel', target: '100% Terlapor', real: '', jenis: 'leading', status: 'on' },
-    { kpi: 'Produktivitas Rata-Rata per Orang', target: '>80 Nota / Hari', real: '', jenis: 'lagging', status: 'on' },
-    { kpi: 'Total Lembur', target: 'Tercatat Jika Ada', real: '', jenis: 'lagging', status: 'on' },
-  ],
-  kreatifKPI: [
     { kpi: 'Ketepatan Stok Barang', target: '>97% Sesuai', real: '', jenis: 'lagging', status: 'on' },
     { kpi: 'Laporan Harian Retur, Gagal, Cancel', target: '100% Terlapor', real: '', jenis: 'leading', status: 'on' },
     { kpi: 'Produktivitas Rata-Rata per Orang', target: '>80 Nota / Hari', real: '', jenis: 'lagging', status: 'on' },
@@ -668,8 +661,7 @@ function App() {
         { title: 'Research & Development', key: 'rndKPI' },
         { title: 'PPIC', key: 'ppicKPI' },
         { title: 'Finance', key: 'financeKPI' },
-        { title: 'Gudang', key: 'gudangKPI' },
-      { title: 'Kreatif', key: 'kreatifKPI'},
+        { title: 'Gudang', key: 'gudangKPI' }
       ].map((kpiCategory, index) => (
         <React.Fragment key={kpiCategory.key}>
           <section className={`slide ${currentSlide === (index + 2) ? 'active' : ''}`}>
