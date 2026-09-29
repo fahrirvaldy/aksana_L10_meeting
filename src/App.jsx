@@ -669,7 +669,7 @@ function App() {
         { title: 'PPIC', key: 'ppicKPI' },
         { title: 'Finance', key: 'financeKPI' },
         { title: 'Gudang', key: 'gudangKPI' },
-      { title: 'Kreatif', key: 'KreatifKPI'},
+      { title: 'Kreatif', key: 'kreatifKPI'},
       ].map((kpiCategory, index) => (
         <React.Fragment key={kpiCategory.key}>
           <section className={`slide ${currentSlide === (index + 2) ? 'active' : ''}`}>
