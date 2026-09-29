@@ -36,6 +36,7 @@ const INITIAL_STATE = {
     ppicKPI: 'PPIC',
     financeKPI: 'Finance',
     gudangKPI: 'Gudang',
+    kreatifKPI: 'Kreatif',
   },
   marketingKPI: [
     { kpi: 'Omzet Total', target: 'Rp 273,751,236', real: '', jenis: 'lagging', status: 'on' },
@@ -82,6 +83,12 @@ const INITIAL_STATE = {
   gudangKPI: [
     { kpi: 'Jumlah Pesanan Diproses', target: '100 Diproses', real: '', jenis: 'leading', status: 'on' },
     { kpi: 'Pengiriman Tepat Waktu', target: '>95% Tepat Waktu', real: '', jenis: 'lagging', status: 'on' },
+    { kpi: 'Ketepatan Stok Barang', target: '>97% Sesuai', real: '', jenis: 'lagging', status: 'on' },
+    { kpi: 'Laporan Harian Retur, Gagal, Cancel', target: '100% Terlapor', real: '', jenis: 'leading', status: 'on' },
+    { kpi: 'Produktivitas Rata-Rata per Orang', target: '>80 Nota / Hari', real: '', jenis: 'lagging', status: 'on' },
+    { kpi: 'Total Lembur', target: 'Tercatat Jika Ada', real: '', jenis: 'lagging', status: 'on' },
+  ],
+  kreatifKPI: [
     { kpi: 'Ketepatan Stok Barang', target: '>97% Sesuai', real: '', jenis: 'lagging', status: 'on' },
     { kpi: 'Laporan Harian Retur, Gagal, Cancel', target: '100% Terlapor', real: '', jenis: 'leading', status: 'on' },
     { kpi: 'Produktivitas Rata-Rata per Orang', target: '>80 Nota / Hari', real: '', jenis: 'lagging', status: 'on' },
@@ -414,7 +421,7 @@ function App() {
     const currentlyOffTrack = [];
     const currentlyOnTrack = [];
 
-    ['marketingKPI', 'creativeKPI', 'rndKPI', 'ppicKPI', 'financeKPI', 'gudangKPI', 'rockReview'].forEach(key => {
+    ['marketingKPI', 'creativeKPI', 'rndKPI', 'ppicKPI', 'financeKPI', 'gudangKPI', 'kreatifKPI', 'rockReview'].forEach(key => {
       if (data[key]) {
         data[key].forEach(item => {
           const text = item.kpi || item.rock;
@@ -662,6 +669,7 @@ function App() {
         { title: 'PPIC', key: 'ppicKPI' },
         { title: 'Finance', key: 'financeKPI' },
         { title: 'Gudang', key: 'gudangKPI' },
+      { title: 'Kreatif', key: 'KreatifKPI'},
       ].map((kpiCategory, index) => (
         <React.Fragment key={kpiCategory.key}>
           <section className={`slide ${currentSlide === (index + 2) ? 'active' : ''}`}>
