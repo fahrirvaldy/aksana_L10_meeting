@@ -36,7 +36,7 @@ const INITIAL_STATE = {
     ppicKPI: 'PPIC',
     financeKPI: 'Finance',
     gudangKPI: 'Gudang',
-    kreatifKPI: 'Kreatif',
+    kreatifKPI: 'Kreatif'
   },
   marketingKPI: [
     { kpi: 'Omzet Total', target: 'Rp 273,751,236', real: '', jenis: 'lagging', status: 'on' },
